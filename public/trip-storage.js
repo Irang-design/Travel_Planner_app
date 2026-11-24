@@ -50,7 +50,8 @@ const tripStorage = (() => {
       itinerary, costs: plan.costs.map(([label, amount, status]) => [redact(label), amount, status]),
       weather: plan.weather?.map(day => ({
         date: day.date, status: day.status, reason: redact(day.reason),
-        source: publicUrl(day.source), rainExpected: day.rainExpected, maxRainProbability: day.maxRainProbability
+        source: publicUrl(day.source), rainExpected: day.rainExpected, maxRainProbability: day.maxRainProbability,
+        forecastType: redact(day.forecastType, 10), forecastArea: redact(day.forecastArea, 50)
       })) ?? null,
       trace: (plan.trace ?? []).map(entry => ({ name: redact(entry.name, 80), summary: redact(entry.summary), sources: urls(entry.sources) })),
       webSources: urls(plan.webSources ?? plan.trace?.filter(entry => entry.name === 'web_search').flatMap(entry => entry.sources ?? [])),

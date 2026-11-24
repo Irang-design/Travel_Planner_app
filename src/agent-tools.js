@@ -13,7 +13,7 @@ export const routeKey = (origin, destination) => `${coordinateKey(origin)}>${coo
 const schema = (name, description, properties) => ({ type: 'function', name, description, strict: true, parameters: object(properties) });
 
 export const agentTools = [
-  schema('get_weather', '이 여행 기간의 기상청 단기예보를 조회한다. 날씨 확인 요청이나 비에 영향을 받는 야외 일정에만 사용한다.', {}),
+  schema('get_weather', '이 여행 기간의 기상청 단기예보와 범위 밖 날짜의 권역별 중기예보를 조회한다. 날씨 확인 요청이나 비에 영향을 받는 야외 일정에만 사용한다.', {}),
   schema('search_places', '여행 지역에서 장소명과 주소, 카테고리, 좌표를 검색한다.', { keyword: string }),
   schema('get_routes', '검색에서 확인한 두 WGS84 좌표 사이의 자동차 이동 거리와 예상 시간을 조회한다. 자동차 여행에서만 사용한다.', { origin: point, destination: point }),
   schema('calculate_budget', '사용자가 추가 요청에 원화로 명시한 항목별 여행 전체 금액을 합산한다. 미확인 항목은 amount를 null, status를 unknown으로 전달한다. 추정치라고 명시된 금액만 estimated로 표시한다.', {
@@ -40,7 +40,7 @@ export async function executeTool(name, args, conditions, state) {
       return {
         result,
         summary: `예보 ${known}일 · 미확인 ${dates.length - known}일${rainy.length ? ' · 비 가능성 ' + rainy.join(', ') : ''}${reasons.length ? ' · ' + reasons.join(', ') : ''}`,
-        sources: [result[0].source]
+        sources: [...new Set(result.map(day => day.source))]
       };
     }
     case 'search_places': {
