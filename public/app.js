@@ -90,9 +90,8 @@ function weatherNote(weather) {
   const forecast = weather.status === 'forecast'
     ? `${weather.rainExpected ? '비 가능성 있음' : '예보에서 비 신호 없음'}${weather.maxRainProbability === null ? '' : ` · 최고 강수확률 ${weather.maxRainProbability}%`}`
     : `미확인 · ${escapeHtml(weather.reason)}`;
-  const label = weather.forecastType === 'mid' ? '기상청 중기예보' : '기상청 단기예보';
   const area = weather.forecastArea ? ` · ${escapeHtml(weather.forecastArea)} 권역` : '';
-  return `<p class="note place-source">날씨 · ${forecast}${area} · ${sourceLink(weather.source, label)}</p>`;
+  return `<p class="note">날씨 · ${forecast}${area}</p>`;
 }
 
 function weatherWindow() {
