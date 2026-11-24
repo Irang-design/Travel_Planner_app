@@ -26,7 +26,8 @@ const tripStorage = (() => {
     latitude: Number.isFinite(place.latitude) ? place.latitude : null,
     sourceUrl: publicUrl(place.sourceUrl)
   });
-  const issue = entry => ({ message: redact(entry.message), day: entry.day, severity: entry.severity });
+  const issue = entry => ({ message: redact(entry.message), day: entry.day, severity: entry.severity,
+    code: redact(entry.code, 40), subject: redact(entry.subject, 100) });
 
   function snapshot(plan) {
     const itinerary = plan.itinerary.map(day => day.map(([time, name, category, detail, place, route, visit]) => [

@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import { AgentLimitError, runAgent } from './agent-loop.js';
 import { coordinateKey, routeKey } from './agent-tools.js';
 import { checkVisit, validateItinerary } from './validate-itinerary.js';
-import { fillItineraryCoordinates } from './itinerary-coordinates.js';
+import { fillItineraryCoordinates, fillItineraryRoutes } from './itinerary-coordinates.js';
 import { normalizeRegion } from './region-name.js';
 import { weatherAvailableThrough } from './get-weather.js';
 import { findPlan, rememberPlan } from './plan-snapshots.js';
@@ -195,6 +195,8 @@ async function generatePlan(response, conditions, previous, message) {
         'get_weather에서 rainExpected가 true인 날짜에 야외 활동이 잡혀 있다면 해당 지역의 실내 관광지를 search_places로 찾아 검증된 후보로 바꾼다. 실내 후보는 사용자 취향, 장소 개수와 이동 제한에 맞춰 선택한다. 실내 일정이 이미 충분하면 추가 검색하지 않는다.',
         '날씨 미확인은 강수 여부를 모르는 상태다. 날씨를 추정하거나 맑다고 가정하지 않는다.',
         '지도에 표시할 방문 장소는 search_places 결과에서 지역과 취향에 맞는 후보를 선택하고, 반환된 name과 id를 각 일정의 name과 placeId에 그대로 넣는다. 일치하는 장소가 없으면 null을 사용한다.',
+        '카페·식당 방문은 가능하면 검색 결과에 있는 실제 이름을 선택한다. 특정 장소 대신 현지 선택을 사용자가 요청했거나 검색에서 결과를 확인할 수 없을 때만 일반 후보를 제안한다.',
+        '방문 설명에는 추천 이유를 적는다. 운영시간과 날씨의 미확인 안내는 화면에서 따로 표시하므로 설명에 반복하지 않는다.',
         '자동차 이동시간이 필요한 경우 같은 날짜의 연속 방문 장소 좌표로 get_routes를 호출한다.',
         'maxTravelMinutes가 있으면 하루 합계가 아닌 각 연속 방문 구간의 이동시간 상한으로 적용한다. 자동차는 가능한 구간을 실제 조회하고 초과하면 가까운 후보로 바꾸거나 방문 수를 줄인다. 조회하지 못한 시간은 제한 충족을 주장하지 않는다.',
         '서버 함수 호출은 최대 7회다. 당일치기에 장소 검색, 경로, 예산이 모두 필요하면 장소 검색은 최대 3회만 사용하고 경로와 예산에 호출을 남긴다. 검색 결과의 장소와 좌표를 재사용하고 같은 장소를 반복 검색하지 않는다.',
@@ -221,8 +223,11 @@ async function generatePlan(response, conditions, previous, message) {
       return { itinerary, issues: validateItinerary(itinerary, candidate.costs, candidate.weather, conditions) };
     }, revision);
     const agentTime = performance.now() - started;
-    result.itinerary = await fillItineraryCoordinates(result.itinerary, conditions.region, trace,
-      revision ? new Set(result.changedDays) : null);
+    const affectedDays = revision ? new Set(result.changedDays) : null;
+    result.itinerary = await fillItineraryCoordinates(result.itinerary, conditions.region, trace, affectedDays);
+    if (conditions.transport === '자동차') {
+      result.itinerary = await fillItineraryRoutes(result.itinerary, trace, affectedDays);
+    }
     result.issues = validateItinerary(result.itinerary, result.costs, result.weather, conditions);
     const remaining = new Set(result.issues.map(issue => issue.id));
     const describeDay = stops => stops.map(([time, name, , , , , visit]) =>

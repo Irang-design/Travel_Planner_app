@@ -12,7 +12,7 @@ function formatPoint(point) {
 
 const unavailable = () => ({ status: 'unavailable', mode: 'driving', message: '자동차 경로 확인 불가' });
 
-export async function get_routes(origin, destination) {
+export async function get_routes(origin, destination, signal = AbortSignal.timeout(10000)) {
   const start = formatPoint(origin);
   const goal = formatPoint(destination);
   if (start === goal) return unavailable();
@@ -26,7 +26,7 @@ export async function get_routes(origin, destination) {
   const response = await fetch(url, {
     headers: { 'X-NCP-APIGW-API-KEY-ID': id, 'X-NCP-APIGW-API-KEY': secret },
     redirect: 'error',
-    signal: AbortSignal.timeout(10000)
+    signal
   });
   if (!response.ok && response.status !== 400) {
     throw new Error(`NAVER Maps 자동차 경로 조회 실패 (HTTP ${response.status})`);

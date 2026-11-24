@@ -1,4 +1,5 @@
 import { search_places } from './search-places.js';
+import { get_routes } from './get-routes.js';
 import { addressMatchesRegion, regionPart } from './region-name.js';
 
 const normalize = name => name.normalize('NFKC').replace(/\s+/g, '').toLowerCase();
@@ -46,5 +47,42 @@ export async function fillItineraryCoordinates(itinerary, region, trace, days = 
   return itinerary.map((stops, day) => days && !days.has(day + 1) ? stops : stops.map(stop => {
     const place = found.get(normalize(stop[1]));
     return place && !hasCoordinates(stop[4]) ? stop.map((value, index) => index === 4 ? place : value) : stop;
+  }));
+}
+
+export async function fillItineraryRoutes(itinerary, trace, days = null) {
+  const pairs = new Map();
+  const keyOf = (from, to) => `${from.longitude},${from.latitude}>${to.longitude},${to.latitude}`;
+  itinerary.forEach((stops, day) => {
+    if (days && !days.has(day + 1)) return;
+    for (let index = 1; index < stops.length; index++) {
+      const from = stops[index - 1][4];
+      const to = stops[index][4];
+      if (!stops[index][5] && hasCoordinates(from) && hasCoordinates(to) &&
+          (from.longitude !== to.longitude || from.latitude !== to.latitude)) {
+        pairs.set(keyOf(from, to), [from, to]);
+      }
+    }
+  });
+  const results = new Map();
+  const candidates = [...pairs].slice(0, 8);
+  const signal = AbortSignal.timeout(6500);
+  await Promise.all(candidates.map(async ([key, [from, to]]) => {
+    try {
+      const result = await get_routes(from, to, signal);
+      if (result.status === 'available') results.set(key, result);
+    } catch {
+      // Leave the segment unconfirmed if a route does not arrive in time.
+    }
+  }));
+  if (candidates.length) trace.push({
+    name: 'get_routes',
+    summary: `좌표가 확인된 자동차 구간 추가 조회 · ${results.size}/${candidates.length}개 확인`
+  });
+  return itinerary.map((stops, day) => days && !days.has(day + 1) ? stops : stops.map((stop, index) => {
+    const from = stops[index - 1]?.[4];
+    const to = stop[4];
+    const route = !stop[5] && hasCoordinates(from) && hasCoordinates(to) && results.get(keyOf(from, to));
+    return route ? stop.map((value, slot) => slot === 5 ? route : value) : stop;
   }));
 }

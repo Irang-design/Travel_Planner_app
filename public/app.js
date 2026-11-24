@@ -118,18 +118,31 @@ function budgetEditor(budget, costs) {
 function validationReport(report) {
   if (!report) return '';
   const conflicts = report.issues.filter(issue => issue.severity === 'conflict');
-  const unknown = report.issues.filter(issue => issue.severity === 'unknown');
+  const unknown = report.issues.filter(issue => issue.severity === 'unknown' &&
+    (issue.day == null || issue.day === activeDay + 1));
+  const labels = {
+    hours_unknown: '운영시간', route_unknown: '자동차 이동시간',
+    weather_unknown: '야외 일정 날씨', setting_unknown: '실내·야외 여부', budget_unknown: '미확인 비용'
+  };
+  const groups = new Map();
+  for (const issue of unknown) {
+    const label = labels[issue.code] ?? '기타 확인 사항';
+    if (!groups.has(label)) groups.set(label, []);
+    groups.get(label).push(issue);
+  }
   const list = issues => `<ul>${issues.map(issue => `<li>${issue.day ? `${issue.day}일차 · ` : ''}${escapeHtml(issue.message)}</li>`).join('')}</ul>`;
   return `<section class="note validation-report" aria-label="일정 검증">
     <h3>일정 검증</h3>
-    <p>재계획 ${report.replans}회 · 남은 충돌 ${conflicts.length}건 · 확인 필요 ${unknown.length}건</p>
+    <p>전체 일정 · 재계획 ${report.replans}회 · 남은 충돌 ${conflicts.length}건</p>
     ${report.repairFailed ? '<p>재계획을 마치지 못해 검증 결과가 가장 좋은 일정을 표시합니다.</p>' : ''}
     ${!report.repairFailed && report.replans === 2 && conflicts.length ? '<p>재계획 한도에 도달했습니다. 아래 충돌을 확인해 주세요.</p>' : ''}
     ${conflicts.length ? `<h4>남은 충돌</h4>${list(conflicts)}` : ''}
     ${report.resolved.length ? `<h4>수정 이유 · 해결된 충돌</h4>${list(report.resolved)}` : ''}
     ${report.changes.length ? `<details><summary>수정 전후 일정</summary><ul>${report.changes.map(change =>
       `<li><strong>${change.day}일차</strong><br>수정 전 · ${escapeHtml(change.before)}<br>수정 후 · ${escapeHtml(change.after)}</li>`).join('')}</ul></details>` : ''}
-    ${unknown.length ? `<details><summary>확인 필요 ${unknown.length}건</summary>${list(unknown)}</details>` : ''}
+    ${groups.size ? `<details><summary>${activeDay + 1}일차 확인 사항 · ${[...groups.keys()].join(' · ')}</summary>
+      <ul>${[...groups].map(([label, issues]) => `<li><strong>${label}</strong> · ${[...new Set(issues.map(issue =>
+        escapeHtml(issue.subject || issue.message)))].join(' · ')}</li>`).join('')}</ul></details>` : ''}
   </section>`;
 }
 
@@ -150,7 +163,7 @@ function render() {
   if (activeTab === 'plan') {
     panel.innerHTML = dayControls() + `<h3 class="day-title">${activeDay + 1}일차 · ${date}</h3>${weatherNote(plan.weather?.[activeDay])}${weatherWindow()}<ol class="timeline">${stops.map(([time, name, category, detail, place, route, visit], index) =>
       `<li><time>${escapeHtml(time)}</time><span class="pin"></span><div><b>${escapeHtml(name)}</b><p class="details">${escapeHtml(category)} · ${escapeHtml(detail)}${visit?.endTime ? ` · ${escapeHtml(visit.endTime)}까지` : ''}</p>
-        ${index ? `<p class="details travel-time">앞 장소에서 · ${travelTime(route)}</p>` : ''}
+        ${index && (route || !plan.validation) ? `<p class="details travel-time">앞 장소에서 · ${travelTime(route)}</p>` : ''}
         ${visit?.hours ? `<p class="details place-source">${sourceLink(visit.hours.sourceUrl, '방문일 운영시간 출처')}</p>` : ''}
         ${place ? `<p class="details place-source">${escapeHtml(place.address)} ${placeSource(place)}</p>` : ''}</div></li>`).join('')}</ol>`;
     panel.innerHTML += validationReport(plan.validation);

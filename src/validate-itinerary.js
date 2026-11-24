@@ -4,7 +4,7 @@ const minute = time => Number(time.slice(0, 2)) * 60 + Number(time.slice(3));
 export function validateItinerary(itinerary, costs, weather, conditions) {
   const issues = [];
   const add = (code, message, day = null, severity = 'conflict', subject = '') =>
-    issues.push({ id: JSON.stringify([code, day, subject]), code, message, day, severity });
+    issues.push({ id: JSON.stringify([code, day, subject]), code, message, day, severity, subject });
   const total = costs.reduce((sum, item) => sum + (item.amount ?? 0), 0);
   if (total > conditions.budget) add('budget', `반영된 비용이 총예산을 ${(total - conditions.budget).toLocaleString('ko-KR')}원 초과합니다.`);
   if (costs.some(item => item.amount === null)) add('budget_unknown', '미확인 비용이 있어 최종 지출과 잔여 예산을 확인해야 합니다.', null, 'unknown');
