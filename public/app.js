@@ -192,7 +192,7 @@ function render() {
     const partial = known.length < costs.length;
     panel.innerHTML = `<table class="budget-table"><caption>예상 비용 · ${people}명 기준</caption>
       <thead><tr><th scope="col">항목</th><th scope="col">금액</th><th scope="col">상태</th></tr></thead>
-      <tbody>${costs.map(([label, value, status]) => `<tr><th scope="row">${escapeHtml(label)}</th><td>${value === null ? '—' : money(value)}</td><td>${value === null ? '미확인' : status === 'estimated' || !ai ? '추정' : '입력 금액'}</td></tr>`).join('')}</tbody>
+      <tbody>${costs.map(([label, value, status, basis]) => `<tr><th scope="row">${escapeHtml(label)}${basis ? `<p class="details budget-basis">${escapeHtml(basis)}</p>` : ''}</th><td>${value === null ? '—' : money(value)}</td><td>${value === null ? '미확인' : status === 'estimated' || !ai ? '추정' : '입력 금액'}</td></tr>`).join('')}</tbody>
       <tfoot><tr><th scope="row">총예산</th><td>${money(budget)}</td><td></td></tr>
       <tr><th scope="row">${partial ? '비용 소계' : '비용 합계'}</th><td>${known.length ? money(total) : '미확인'}</td><td></td></tr>
       <tr><th scope="row">${known.length && remaining < 0 ? '예산 초과' : '잔여 예산'}</th><td>${known.length ? money(Math.abs(remaining)) : '미확인'}</td><td>${known.length && partial ? '미확인 항목 제외' : ''}</td></tr></tfoot></table>`;

@@ -79,9 +79,12 @@ export async function executeTool(name, args, conditions, state) {
           ? { category, amount: expense.amount, status: expense.status }
           : { category, amount: null, status: 'unknown' };
       });
-      const result = calculate_budget(conditions.budget, items.map((item, index) =>
-        item.amount === null && state.costs[index]?.amount != null ? state.costs[index] : item));
-      state.costs = result.items;
+      const preserved = items.map((item, index) => {
+        const previous = state.costs[index];
+        return item.amount === null && (previous?.amount != null || previous?.origin === 'manual') ? previous : item;
+      });
+      const result = calculate_budget(conditions.budget, preserved);
+      state.costs = preserved;
       return { result, summary: `소계 ${result.subtotal.toLocaleString('ko-KR')}원 · 미확인 ${result.unknownCount}건` };
     }
     default:

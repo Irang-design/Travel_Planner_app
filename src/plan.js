@@ -5,6 +5,7 @@ import { checkVisit, validateItinerary } from './validate-itinerary.js';
 import { fillItineraryCoordinates, fillItineraryRoutes } from './itinerary-coordinates.js';
 import { normalizeRegion } from './region-name.js';
 import { weatherAvailableThrough } from './get-weather.js';
+import { estimateTripBudget } from './estimate-trip-budget.js';
 import { findPlan, rememberPlan } from './plan-snapshots.js';
 
 const categories = ['맛집', '관광', '자연', '휴식', '쇼핑', '이동', '기타'];
@@ -137,7 +138,9 @@ function revisionContext(previous, message) {
   });
   return {
     input: { conditions: previous.conditions, currentPlan: { itinerary, costs: previous.costs, weather: previous.weather }, changeRequest: message },
-    state: { places, coordinates, routes, webSources, costs: previous.costs, weather: previous.weather, budgetText: previous.conditions.request + '\n' + message },
+    state: { places, coordinates, routes, webSources,
+      costs: previous.costs.map(item => item.origin === 'default' ? { category: item.category, amount: null, status: 'unknown' } : item),
+      weather: previous.weather, budgetText: previous.conditions.request + '\n' + message },
     baselineIssues: new Set(previous.issues.map(issue => issue.id))
   };
 }
@@ -228,6 +231,7 @@ async function generatePlan(response, conditions, previous, message) {
     if (conditions.transport === '자동차') {
       result.itinerary = await fillItineraryRoutes(result.itinerary, trace, affectedDays);
     }
+    result.costs = estimateTripBudget(result.costs, result.itinerary, conditions);
     result.issues = validateItinerary(result.itinerary, result.costs, result.weather, conditions);
     const remaining = new Set(result.issues.map(issue => issue.id));
     const describeDay = stops => stops.map(([time, name, , , , , visit]) =>
@@ -246,7 +250,7 @@ async function generatePlan(response, conditions, previous, message) {
     return response.json({
       planId,
       itinerary: result.itinerary,
-      costs: result.costs.map(({ category, amount, status }) => [category, amount, status]),
+      costs: result.costs.map(({ category, amount, status, basis }) => [category, amount, status, basis]),
       weather: result.weather,
       weatherAvailableThrough: weatherAvailableThrough(),
       validation: {

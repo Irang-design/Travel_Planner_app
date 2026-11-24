@@ -15,15 +15,15 @@ export function updateBudget(request, response) {
 
   const expenses = plan.costs.map((item, index) => {
     const amount = amounts[index];
-    return amount === item.amount ? item : { category: item.category, amount, status: amount === null ? 'unknown' : 'estimated' };
+    return amount === item.amount ? item : { category: item.category, amount, status: amount === null ? 'unknown' : 'estimated', origin: 'manual' };
   });
-  const { items } = calculate_budget(budget, expenses);
+  calculate_budget(budget, expenses);
   const conditions = { ...plan.conditions, budget };
-  const issues = validateItinerary(plan.itinerary, items, plan.weather, conditions);
+  const issues = validateItinerary(plan.itinerary, expenses, plan.weather, conditions);
   return response.json({
-    planId: rememberPlan({ ...plan, conditions, costs: items, issues }),
+    planId: rememberPlan({ ...plan, conditions, costs: expenses, issues }),
     budget,
-    costs: items.map(({ category, amount, status }) => [category, amount, status]),
+    costs: expenses.map(({ category, amount, status, basis }) => [category, amount, status, basis]),
     issues
   });
 }

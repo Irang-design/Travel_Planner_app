@@ -37,7 +37,7 @@ export async function get_routes(origin, destination, signal = AbortSignal.timeo
 
   const route = data.route?.traoptimal?.[0];
   if (!route) return unavailable();
-  const { distance, duration } = route.summary ?? {};
+  const { distance, duration, fuelPrice, tollFare } = route.summary ?? {};
   if (!nonNegativeInteger(distance) || !nonNegativeInteger(duration)) {
     throw new Error('NAVER Maps 응답에 유효한 거리 또는 소요 시간이 없습니다.');
   }
@@ -48,6 +48,8 @@ export async function get_routes(origin, destination, signal = AbortSignal.timeo
     distanceKm: distance / 1000,
     durationMs: duration,
     durationMinutes: Math.ceil(duration / 60000),
+    fuelPrice: nonNegativeInteger(fuelPrice) ? fuelPrice : null,
+    tollFare: nonNegativeInteger(tollFare) ? tollFare : null,
     path: Array.isArray(route.path) ? route.path.filter(point => Array.isArray(point) &&
       point.length === 2 && point.every(Number.isFinite) && Math.abs(point[0]) <= 180 && Math.abs(point[1]) <= 90) : []
   };

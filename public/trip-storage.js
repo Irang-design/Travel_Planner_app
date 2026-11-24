@@ -48,7 +48,7 @@ const tripStorage = (() => {
       region: plan.region, start: plan.start, days: plan.days, people: plan.people, budget: plan.budget,
       transport: plan.transport, chosen: plan.chosen.map(value => redact(value, 50)),
       maxStops: plan.maxStops, maxTravelMinutes: plan.maxTravelMinutes,
-      itinerary, costs: plan.costs.map(([label, amount, status]) => [redact(label), amount, status]),
+      itinerary, costs: plan.costs.map(([label, amount, status, basis]) => [redact(label), amount, status, redact(basis)]),
       weather: plan.weather?.map(day => ({
         date: day.date, status: day.status, reason: redact(day.reason),
         source: publicUrl(day.source), rainExpected: day.rainExpected, maxRainProbability: day.maxRainProbability,
