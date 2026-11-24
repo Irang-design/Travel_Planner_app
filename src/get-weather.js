@@ -7,7 +7,7 @@ const dateString = time => new Date(time).toISOString().slice(0, 10);
 const compact = date => date.replaceAll('-', '');
 
 export async function get_weather(region, dates) {
-  if (!Object.hasOwn(grids, region) || !Array.isArray(dates) || dates.length < 1 || dates.length > 5 ||
+  if (!Array.isArray(dates) || dates.length < 1 || dates.length > 5 ||
       dates.some(date => typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
         !Number.isFinite(Date.parse(date)) || dateString(Date.parse(date)) !== date)) {
     throw new TypeError('날씨 조회 지역과 날짜를 확인해 주세요.');
@@ -23,6 +23,7 @@ export async function get_weather(region, dates) {
   const lastDate = dateString(Date.parse(baseDate) + (baseHour >= 17 ? 4 : 3) * dayMs);
   const eligible = date => date >= today && date <= lastDate;
   const unknown = (date, reason) => ({ date, status: 'unknown', reason, source });
+  if (!Object.hasOwn(grids, region)) return dates.map(date => unknown(date, '이 지역의 예보 격자 미설정'));
   if (!dates.some(eligible)) return dates.map(date => unknown(date, '단기예보 조회 범위 밖'));
   let key = process.env.KMA_SERVICE_KEY?.trim();
   if (!key) return dates.map(date => unknown(date, eligible(date) ? '기상청 인증 키 미설정' : '단기예보 조회 범위 밖'));

@@ -3,7 +3,11 @@
 <body><header class="top"><div class="wrap nav"><a class="brand" href="#"><span class="logo">✦</span> 어디로<span class="dot">.</span></a><span class="mode"><i></i> 샘플 모드</span></div></header>
 <main class="wrap"><section class="hero"><div><span class="eyebrow">✦ &nbsp; 국내 여행 플래너</span><h1>이번 여행,<br>어디로 떠날까요?</h1><p>취향과 예산에 맞춰 나만의 국내 여행을 계획해 보세요.</p></div><span class="caption">⌖ &nbsp; 제주 성산일출봉</span></section>
 <div class="columns"><section class="card form-card" aria-labelledby="form-title"><div class="section-head"><span class="tile">☷</span><div><h2 id="form-title">여행 조건</h2><p>떠나고 싶은 여행을 알려주세요.</p></div></div>
-<form id="planner"><label class="field">여행 지역<select name="region"><option>제주도</option><option>강릉</option><option>부산</option><option>경주</option><option>전주</option></select></label>
+<form id="planner"><div class="region-picker">
+  <label class="field">여행 지역<input type="search" name="region" placeholder="예: 수원, 서울 성동구, 여수" maxlength="50" required></label>
+  <button type="button" id="search-region">지역 검색</button>
+</div>
+<p class="feedback" id="region-feedback" role="status"></p><ul class="region-results" id="region-results" hidden></ul>
 <div class="pair"><label class="field">출발일<input name="start" type="date" required></label><label class="field">여행 기간<select name="days"><option value="1">당일치기</option><option value="2">1박 2일</option><option value="3" selected>2박 3일</option><option value="4">3박 4일</option><option value="5">4박 5일</option></select></label></div>
 <div class="pair"><label class="field">여행 인원 <span class="input-unit"><input name="people" type="number" min="1" max="30" value="2" required><span>명</span></span></label><label class="field">총예산 <span class="input-unit"><input name="budget" type="number" min="1" max="100000000" value="600000" required><span>원</span></span></label></div>
 <fieldset><legend>여행 취향 <small>복수 선택</small></legend><div class="chips" id="tastes"></div></fieldset>
@@ -26,7 +30,7 @@
   <p id="revision-error" class="feedback error" role="alert"></p>
 </section></section></div>
 <section class="card place-search" aria-labelledby="place-title">
-  <div class="section-head"><span class="tile">⌕</span><div><h2 id="place-title">장소 검색</h2><p>여행 조건에서 선택한 지역을 NAVER에서 검색합니다.</p></div></div>
+  <div class="section-head"><span class="tile">⌕</span><div><h2 id="place-title">장소 검색</h2><p>여행 조건에 입력한 지역을 NAVER에서 검색합니다.</p></div></div>
   <form id="place-form">
     <label class="field">검색어<input name="keyword" type="search" placeholder="예: 관광지, 음식점, 카페" maxlength="80" required></label>
     <button type="submit" class="submit">장소 검색</button>

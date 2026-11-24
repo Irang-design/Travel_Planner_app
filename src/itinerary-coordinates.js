@@ -1,10 +1,10 @@
 import { search_places } from './search-places.js';
+import { addressMatchesRegion, regionPart } from './region-name.js';
 
-const area = { 제주도: '제주', 부산: '부산', 강릉: '강릉', 경주: '경주', 전주: '전주' };
 const normalize = name => name.normalize('NFKC').replace(/\s+/g, '').toLowerCase();
 const comparisonName = (name, region) => {
   const normalized = normalize(name).replace(/해수욕장$/, '해변');
-  const prefix = area[region];
+  const prefix = regionPart(region);
   const stripped = normalized.startsWith(prefix) ? normalized.slice(prefix.length) : normalized;
   return stripped.length >= 3 ? stripped : normalized;
 };
@@ -26,7 +26,7 @@ export async function fillItineraryCoordinates(itinerary, region, trace, days = 
     await Promise.all(batch.map(async ([key, name]) => {
       try {
         const places = (await search_places(region, name, signal)).filter(place => hasCoordinates(place) &&
-          place.address.includes(area[region]));
+          addressMatchesRegion(place.address, region));
         const exact = places.filter(place => normalize(place.name) === key);
         const matching = exact.length ? exact : places.filter(place =>
           comparisonName(place.name, region) === comparisonName(name, region));

@@ -1,77 +1,35 @@
 let mapSdk;
-let fallbackSdk;
-let displayedMap;
 let currentMapView;
-let naverUnavailable = false;
-const firstMapTimeout = 8000;
-
-function loadFallbackSdk() {
-  if (fallbackSdk) return fallbackSdk;
-  fallbackSdk = new Promise((resolve, reject) => {
-    const css = document.createElement('link');
-    const script = document.createElement('script');
-    const root = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet';
-    css.rel = 'stylesheet';
-    css.href = root + '.css';
-    css.integrity = 'sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=';
-    script.src = root + '.js';
-    script.integrity = 'sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=';
-    css.crossOrigin = script.crossOrigin = 'anonymous';
-    let loaded = 0;
-    const timer = setTimeout(fail, 10000);
-    function fail() {
-      clearTimeout(timer);
-      css.remove();
-      script.remove();
-      reject(new Error('대체 지도를 불러오지 못했습니다.'));
-    }
-    css.onerror = script.onerror = fail;
-    css.onload = script.onload = () => {
-      if (++loaded !== 2) return;
-      clearTimeout(timer);
-      if (window.L) resolve(window.L);
-      else fail();
-    };
-    document.head.append(css, script);
-  }).catch(error => {
-    fallbackSdk = null;
-    throw error;
-  });
-  return fallbackSdk;
-}
 
 function loadMapSdk() {
+  if (window.naver?.maps?.Map) return Promise.resolve(window.naver.maps);
   if (mapSdk) return mapSdk;
   mapSdk = (async () => {
-    const response = await fetch('/api/map-config', { signal: AbortSignal.timeout(4000) });
-    if (!response.ok) throw new Error('지도 설정을 불러오지 못했습니다.');
+    const response = await fetch('/api/map-config', { signal: AbortSignal.timeout(5000) });
+    if (!response.ok) throw new Error('NAVER 지도 설정을 불러오지 못했습니다.');
     const { clientId } = await response.json();
-    if (!clientId) throw new Error('서버에서 NAVER 지도 Client ID를 설정해 주세요.');
+    if (!clientId) throw new Error('NAVER 지도 Client ID를 확인해 주세요.');
 
     return new Promise((resolve, reject) => {
       const script = document.createElement('script');
-      const timer = setTimeout(() => fail('NAVER 지도 로딩 시간이 초과되었습니다.'), firstMapTimeout);
+      const timer = setTimeout(() => fail('NAVER 지도 스크립트 응답이 늦어지고 있습니다.'), 15000);
       function fail(message) {
         clearTimeout(timer);
         script.remove();
         reject(new Error(message));
       }
-      window.navermap_authFailure = () => {
-        const message = 'NAVER 지도 인증에 실패했습니다. Web Dynamic Map 사용 설정과 등록된 웹 서비스 URL을 확인해 주세요.';
-        fail(message);
-        mapSdk = null;
-        naverUnavailable = true;
-        if (currentMapView) void drawFallback(currentMapView);
-      };
+      function ready() {
+        if (!window.naver?.maps?.Map) return;
+        clearTimeout(timer);
+        resolve(window.naver.maps);
+      }
       const url = new URL('https://oapi.map.naver.com/openapi/v3/maps.js');
       url.searchParams.set('ncpKeyId', clientId);
       url.searchParams.set('callback', 'tripMapReady');
-      window.tripMapReady = () => {
-        clearTimeout(timer);
-        resolve(window.naver.maps);
-      };
-      script.onerror = () => fail('NAVER 지도를 불러오지 못했습니다.');
-      script.src = url;
+      window.tripMapReady = ready;
+      script.onload = ready;
+      script.onerror = () => fail('NAVER 지도 스크립트를 불러오지 못했습니다.');
+      script.src = url.href;
       document.head.append(script);
     });
   })().catch(error => {
@@ -82,66 +40,10 @@ function loadMapSdk() {
 }
 
 function clearTripMap() {
-  clearTimeout(currentMapView?.timer);
+  const view = currentMapView;
   currentMapView = null;
-  disposeMap();
-}
-
-function disposeMap() {
-  displayedMap?.();
-  displayedMap = null;
-}
-
-async function drawFallback(view) {
-  if (view.fallbackStarted || currentMapView !== view || !view.container.isConnected) return;
-  view.fallbackStarted = true;
-  clearTimeout(view.timer);
-  disposeMap();
-  const { container, status, markers, routes } = view;
-  container.setAttribute('aria-label', 'OpenStreetMap 방문 장소 지도');
-  status.textContent = 'NAVER 지도에 연결할 수 없어 대체 지도를 불러오는 중…';
-  try {
-    const maps = await loadFallbackSdk();
-    if (currentMapView !== view || !container.isConnected) return;
-    const points = markers.map(({ place }) => [place.latitude, place.longitude]);
-    const map = maps.map(container).setView(points[0], 14);
-    const tileTimer = setTimeout(() => {
-      status.textContent = '대체 지도 타일 응답이 늦어지고 있어요. 아래에서 장소와 이동시간을 확인할 수 있습니다.';
-    }, firstMapTimeout);
-    displayedMap = () => {
-      clearTimeout(tileTimer);
-      map.remove();
-    };
-    const tiles = maps.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
-      maxZoom: 19
-    });
-    const attribution = routes.length ? ' · 자동차 경로 NAVER Maps' : '';
-    let receivedTile = false;
-    tiles.once('tileload', () => {
-      clearTimeout(tileTimer);
-      receivedTile = true;
-      status.textContent = 'OpenStreetMap 대체 지도' + attribution;
-    });
-    tiles.on('load', () => {
-      clearTimeout(tileTimer);
-      if (!receivedTile) status.textContent = '대체 지도 타일을 불러오지 못했습니다. 아래에서 방문 장소와 이동시간을 확인할 수 있어요.';
-    });
-    points.forEach((position, index) => maps.marker(position, { title: markers[index].title }).addTo(map));
-    const bounds = maps.latLngBounds(points);
-    for (const route of routes) {
-      const path = route.path.map(([longitude, latitude]) => [latitude, longitude]);
-      maps.polyline(path, { color: '#17654b', weight: 5, opacity: 0.85 }).addTo(map);
-      bounds.extend(path);
-    }
-    if (points.length > 1 || routes.length) map.fitBounds(bounds, { padding: [24, 24], maxZoom: 16 });
-    tiles.addTo(map);
-  } catch {
-    if (currentMapView !== view || !container.isConnected) return;
-    disposeMap();
-    container.hidden = true;
-    status.textContent = '지도를 불러오지 못했습니다. 아래에서 방문 장소와 이동시간을 확인할 수 있어요.';
-  }
+  clearTimeout(view?.tileTimer);
+  view?.map?.destroy();
 }
 
 async function drawTripMap(container, status, stops) {
@@ -152,25 +54,42 @@ async function drawTripMap(container, status, stops) {
     status.textContent = '이 날짜에는 좌표를 확인한 장소가 없습니다.';
     return;
   }
-  const routes = stops.map(stop => stop[5]).filter(route => route?.path?.length >= 2);
-  const view = { container, status, markers, routes, fallbackStarted: false };
+
+  const view = { container };
   currentMapView = view;
-  if (naverUnavailable) return drawFallback(view);
-  view.timer = setTimeout(() => {
-    if (currentMapView !== view) return;
-    naverUnavailable = true;
-    void drawFallback(view);
-  }, firstMapTimeout);
+  container.hidden = false;
   status.textContent = 'NAVER 지도를 불러오는 중…';
+
+  function showError(message, hideMap) {
+    if (currentMapView !== view || !container.isConnected) return;
+    if (hideMap) {
+      clearTripMap();
+      container.hidden = true;
+    }
+    status.textContent = message + ' ';
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'map-retry';
+    retry.textContent = 'NAVER 지도 다시 시도';
+    retry.addEventListener('click', () => {
+      clearTripMap();
+      void drawTripMap(container, status, stops);
+    });
+    status.append(retry);
+  }
+
   try {
     const maps = await loadMapSdk();
-    if (currentMapView !== view || !container.isConnected || view.fallbackStarted) return;
+    if (currentMapView !== view || !container.isConnected) return;
+    window.navermap_authFailure = () => showError('NAVER 지도 인증에 실패했습니다. Web 서비스 URL과 Client ID를 확인해 주세요.', true);
     const positions = markers.map(({ place }) => new maps.LatLng(place.latitude, place.longitude));
-    const map = new maps.Map(container, { center: positions[0], zoom: 14 });
-    displayedMap = () => map.destroy();
+    const routes = stops.map(stop => stop[5]).filter(route => route?.path?.length >= 2);
+    const map = new maps.Map(container, { center: positions[0], zoom: 14, gl: false });
+    view.map = map;
+    view.tileTimer = setTimeout(() => showError('NAVER 지도 타일 응답이 늦어지고 있습니다.', false), 10000);
     maps.Event.once(map, 'tilesloaded', () => {
-      if (currentMapView !== view || view.fallbackStarted) return;
-      clearTimeout(view.timer);
+      if (currentMapView !== view) return;
+      clearTimeout(view.tileTimer);
       status.textContent = routes.length
         ? `NAVER 지도 · 실제 자동차 경로 ${routes.length}개`
         : 'NAVER 지도 · 확인된 장소를 마커로 표시했습니다.';
@@ -188,7 +107,7 @@ async function drawTripMap(container, status, stops) {
     if (routes.length || positions.some(position => !position.equals(positions[0]))) {
       map.fitBounds(bounds, { top: 32, right: 32, bottom: 32, left: 32, maxZoom: 16 });
     }
-  } catch {
-    await drawFallback(view);
+  } catch (error) {
+    showError(error.message, true);
   }
 }

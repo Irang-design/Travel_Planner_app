@@ -3,6 +3,7 @@ import { AgentLimitError, runAgent } from './agent-loop.js';
 import { coordinateKey, routeKey } from './agent-tools.js';
 import { checkVisit, validateItinerary } from './validate-itinerary.js';
 import { fillItineraryCoordinates } from './itinerary-coordinates.js';
+import { normalizeRegion } from './region-name.js';
 import { findPlan, rememberPlan } from './plan-snapshots.js';
 
 const categories = ['맛집', '관광', '자연', '휴식', '쇼핑', '이동', '기타'];
@@ -68,12 +69,13 @@ const revisionSchema = {
 
 function readConditions(body) {
   if (!body || typeof body !== 'object') return null;
-  const { region, days, people, budget, transport, request, chosen, start } = body;
+  const { days, people, budget, transport, request, chosen, start } = body;
+  const region = normalizeRegion(body.region);
   const { maxStops = 3, maxTravelMinutes = null } = body;
   if (typeof start !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(start)) return null;
   const date = new Date(start + 'T00:00:00Z');
   if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== start) return null;
-  if (!['제주도', '강릉', '부산', '경주', '전주'].includes(region) ||
+  if (!region ||
       !integerBetween(days, 1, 5) || !integerBetween(people, 1, 30) ||
       !integerBetween(budget, 1, 100000000) || !integerBetween(maxStops, 1, 5) ||
       (maxTravelMinutes !== null && !integerBetween(maxTravelMinutes, 1, 600)) ||

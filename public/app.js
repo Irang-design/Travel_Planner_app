@@ -25,7 +25,7 @@ const lodgingByPlan = new WeakMap();
 
 function readConditions() {
   const data = new FormData(form);
-  const region = data.get('region');
+  const region = data.get('region').trim();
   const days = Number(data.get('days'));
   const people = Number(data.get('people'));
   const budget = Number(data.get('budget'));
@@ -136,7 +136,7 @@ function render() {
     const webSources = plan.webSources ?? [...new Set((plan.trace ?? []).filter(item => item.name === 'web_search').flatMap(item => item.sources ?? []))];
     if (webSources.length) panel.innerHTML += `<details class="place-source"><summary>웹 검색 출처 ${webSources.length}개</summary><ul class="log">${webSources.map(url => `<li>${sourceLink(url, url)}</li>`).join('')}</ul></details>`;
   } else if (activeTab === 'map' && ai) {
-    panel.innerHTML = dayControls() + `<h3 class="day-title">${region} ${activeDay + 1}일차 방문 지도</h3>
+    panel.innerHTML = dayControls() + `<h3 class="day-title">${escapeHtml(region)} ${activeDay + 1}일차 방문 지도</h3>
       <div class="dynamic-map" id="trip-map" aria-label="NAVER 방문 장소 지도"></div><p class="details" id="trip-map-status" role="status"></p>
       <ol class="log">${stops.map(([, name, , , place, route], index) =>
         `<li><strong>${escapeHtml(name)}</strong>${place?.address ? `<p class="details">${escapeHtml(place.address)}</p>` : ''}
@@ -381,9 +381,48 @@ lodgingForm.addEventListener('submit', async event => {
   }
 });
 
-plan = buildSamplePlan(readConditions());
+plan = buildSamplePlan({ ...readConditions(), region: '제주도' });
 render();
 refreshRevisionControls();
+
+const regionInput = form.elements.region;
+const regionButton = document.querySelector('#search-region');
+const regionStatus = document.querySelector('#region-feedback');
+const regionResults = document.querySelector('#region-results');
+
+regionInput.addEventListener('input', () => {
+  regionStatus.textContent = '';
+  regionResults.hidden = true;
+});
+
+regionButton.addEventListener('click', async () => {
+  const region = regionInput.value.trim();
+  if (region.length < 2) {
+    regionStatus.textContent = '검색할 국내 지역 이름을 두 글자 이상 입력해 주세요.';
+    regionInput.focus();
+    return;
+  }
+  regionButton.disabled = true;
+  regionResults.hidden = true;
+  regionStatus.textContent = '입력한 지역의 관광지를 검색하는 중…';
+  try {
+    const query = new URLSearchParams({ region, keyword: '관광지' });
+    const response = await fetch('/api/places?' + query, { signal: AbortSignal.timeout(13000) });
+    const result = await response.json();
+    if (regionInput.value.trim() !== region) return;
+    if (!response.ok) throw new Error(result.error);
+    regionStatus.textContent = result.places.length
+      ? `‘${region}’ 검색 결과입니다. 입력한 지역으로 일정을 만들 수 있어요.`
+      : `‘${region}’ 검색 결과가 없습니다. 시나 구 이름으로 검색해 보세요.`;
+    regionResults.innerHTML = result.places.slice(0, 3).map(place =>
+      `<li><strong>${escapeHtml(place.name)}</strong><p class="details">${escapeHtml(place.address)}</p></li>`).join('');
+    regionResults.hidden = !result.places.length;
+  } catch (error) {
+    if (regionInput.value.trim() === region) regionStatus.textContent = error.message || '지역 검색에 실패했습니다.';
+  } finally {
+    regionButton.disabled = false;
+  }
+});
 
 revisionForm.addEventListener('submit', async event => {
   event.preventDefault();
@@ -448,7 +487,7 @@ placeForm.addEventListener('submit', async event => {
   event.preventDefault();
   const button = placeForm.querySelector('button');
   if (button.disabled) return;
-  const region = form.elements.region.value;
+  const region = form.elements.region.value.trim();
   const keyword = placeForm.elements.keyword.value.trim();
   if (!keyword) {
     placeError.textContent = '검색어를 입력해 주세요.';

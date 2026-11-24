@@ -2,9 +2,9 @@ import OpenAI from 'openai';
 import { findPlan } from './plan-snapshots.js';
 import { search_places } from './search-places.js';
 import { get_routes } from './get-routes.js';
+import { addressMatchesRegion } from './region-name.js';
 
 const lodgingCategory = /숙박|호텔|리조트|펜션|게스트하우스|모텔|호스텔|민박/;
-const regionAddress = { 제주도: /제주|서귀포/, 부산: /부산/, 강릉: /강릉/, 경주: /경주/, 전주: /전주/ };
 const coordinates = place => Number.isFinite(place?.longitude) && Number.isFinite(place?.latitude);
 const pointKey = place => `${place.longitude},${place.latitude}`;
 
@@ -96,7 +96,7 @@ export async function recommendLodging(request, response) {
     const nearby = [];
     const addCandidates = places => {
       for (const place of places) {
-        if (!lodgingCategory.test(place.category) || !regionAddress[region]?.test(place.address)) continue;
+        if (!lodgingCategory.test(place.category) || !addressMatchesRegion(place.address, region)) continue;
         if (!nearby.some(item => item.name === place.name && item.address === place.address)) nearby.push(place);
       }
     };
