@@ -3,6 +3,7 @@ let fallbackSdk;
 let displayedMap;
 let currentMapView;
 let naverUnavailable = false;
+const firstMapTimeout = 8000;
 
 function loadFallbackSdk() {
   if (fallbackSdk) return fallbackSdk;
@@ -42,14 +43,14 @@ function loadFallbackSdk() {
 function loadMapSdk() {
   if (mapSdk) return mapSdk;
   mapSdk = (async () => {
-    const response = await fetch('/api/map-config');
+    const response = await fetch('/api/map-config', { signal: AbortSignal.timeout(4000) });
     if (!response.ok) throw new Error('지도 설정을 불러오지 못했습니다.');
     const { clientId } = await response.json();
     if (!clientId) throw new Error('서버에서 NAVER 지도 Client ID를 설정해 주세요.');
 
     return new Promise((resolve, reject) => {
       const script = document.createElement('script');
-      const timer = setTimeout(() => fail('NAVER 지도 로딩 시간이 초과되었습니다.'), 12000);
+      const timer = setTimeout(() => fail('NAVER 지도 로딩 시간이 초과되었습니다.'), firstMapTimeout);
       function fail(message) {
         clearTimeout(timer);
         script.remove();
@@ -81,6 +82,7 @@ function loadMapSdk() {
 }
 
 function clearTripMap() {
+  clearTimeout(currentMapView?.timer);
   currentMapView = null;
   disposeMap();
 }
@@ -93,6 +95,7 @@ function disposeMap() {
 async function drawFallback(view) {
   if (view.fallbackStarted || currentMapView !== view || !view.container.isConnected) return;
   view.fallbackStarted = true;
+  clearTimeout(view.timer);
   disposeMap();
   const { container, status, markers, routes } = view;
   container.setAttribute('aria-label', 'OpenStreetMap 방문 장소 지도');
@@ -102,7 +105,13 @@ async function drawFallback(view) {
     if (currentMapView !== view || !container.isConnected) return;
     const points = markers.map(({ place }) => [place.latitude, place.longitude]);
     const map = maps.map(container).setView(points[0], 14);
-    displayedMap = () => map.remove();
+    const tileTimer = setTimeout(() => {
+      status.textContent = '대체 지도 타일 응답이 늦어지고 있어요. 아래에서 장소와 이동시간을 확인할 수 있습니다.';
+    }, firstMapTimeout);
+    displayedMap = () => {
+      clearTimeout(tileTimer);
+      map.remove();
+    };
     const tiles = maps.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
       maxZoom: 19
@@ -110,10 +119,12 @@ async function drawFallback(view) {
     const attribution = routes.length ? ' · 자동차 경로 NAVER Maps' : '';
     let receivedTile = false;
     tiles.once('tileload', () => {
+      clearTimeout(tileTimer);
       receivedTile = true;
       status.textContent = 'OpenStreetMap 대체 지도' + attribution;
     });
     tiles.on('load', () => {
+      clearTimeout(tileTimer);
       if (!receivedTile) status.textContent = '대체 지도 타일을 불러오지 못했습니다. 아래에서 방문 장소와 이동시간을 확인할 수 있어요.';
     });
     points.forEach((position, index) => maps.marker(position, { title: markers[index].title }).addTo(map));
@@ -145,6 +156,11 @@ async function drawTripMap(container, status, stops) {
   const view = { container, status, markers, routes, fallbackStarted: false };
   currentMapView = view;
   if (naverUnavailable) return drawFallback(view);
+  view.timer = setTimeout(() => {
+    if (currentMapView !== view) return;
+    naverUnavailable = true;
+    void drawFallback(view);
+  }, firstMapTimeout);
   status.textContent = 'NAVER 지도를 불러오는 중…';
   try {
     const maps = await loadMapSdk();
@@ -152,22 +168,26 @@ async function drawTripMap(container, status, stops) {
     const positions = markers.map(({ place }) => new maps.LatLng(place.latitude, place.longitude));
     const map = new maps.Map(container, { center: positions[0], zoom: 14 });
     displayedMap = () => map.destroy();
+    maps.Event.once(map, 'tilesloaded', () => {
+      if (currentMapView !== view || view.fallbackStarted) return;
+      clearTimeout(view.timer);
+      status.textContent = routes.length
+        ? `NAVER 지도 · 실제 자동차 경로 ${routes.length}개`
+        : 'NAVER 지도 · 확인된 장소를 마커로 표시했습니다.';
+    });
     const bounds = new maps.LatLngBounds(positions[0], positions[0]);
     positions.forEach((position, index) => {
       bounds.extend(position);
       new maps.Marker({ map, position, title: markers[index].title });
     });
-    let routeCount = 0;
     for (const route of routes) {
       const path = route.path.map(([longitude, latitude]) => new maps.LatLng(latitude, longitude));
       path.forEach(point => bounds.extend(point));
       new maps.Polyline({ map, path, strokeColor: '#17654b', strokeWeight: 5, strokeOpacity: 0.85 });
-      routeCount++;
     }
-    if (routeCount || positions.some(position => !position.equals(positions[0]))) {
+    if (routes.length || positions.some(position => !position.equals(positions[0]))) {
       map.fitBounds(bounds, { top: 32, right: 32, bottom: 32, left: 32, maxZoom: 16 });
     }
-    status.textContent = routeCount ? `지도에 실제 자동차 경로 ${routeCount}개를 표시했습니다.` : '확인된 장소만 마커로 표시했습니다.';
   } catch {
     await drawFallback(view);
   }
