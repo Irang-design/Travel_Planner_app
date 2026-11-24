@@ -115,6 +115,14 @@ function lodgingPriceNote() {
     ${sourceLink(naverLookup(plan.lodgingName, '객실 예약 가격'), '네이버에서 객실 가격 확인')}</p>`;
 }
 
+function lodgingRecommendation() {
+  if (!plan.fiveStarRequested) return '';
+  if (!plan.fiveStarHotel) return '<p class="note">요청하신 지역의 5성급 숙소를 확인하지 못했습니다.</p>';
+  const hotel = plan.fiveStarHotel;
+  return `<p class="note place-source"><strong>5성급 숙소 추천 · ${escapeHtml(hotel.name)}</strong>
+    ${hotel.sourceUrl ? ` · ${sourceLink(hotel.sourceUrl, '등급 출처')}` : ''}</p>`;
+}
+
 const budgetNotices = new WeakMap();
 function budgetEditor(budget, costs) {
   return `<details class="budget-editor"><summary>예산 수정</summary>
@@ -178,7 +186,7 @@ function render() {
   panel.setAttribute('aria-labelledby', 'tab-' + activeTab);
 
   if (activeTab === 'plan') {
-    panel.innerHTML = dayControls() + `<h3 class="day-title">${activeDay + 1}일차 · ${date}</h3>${weatherNote(plan.weather?.[activeDay])}${weatherWindow()}<ol class="timeline">${stops.map(([time, name, category, detail, place, route, visit], index) =>
+    panel.innerHTML = dayControls() + `<h3 class="day-title">${activeDay + 1}일차 · ${date}</h3>${weatherNote(plan.weather?.[activeDay])}${weatherWindow()}${activeDay === 0 ? lodgingRecommendation() : ''}<ol class="timeline">${stops.map(([time, name, category, detail, place, route, visit], index) =>
       `<li><time>${escapeHtml(time)}</time><span class="pin"></span><div><b>${escapeHtml(name)}</b><p class="details">${escapeHtml(category)} · ${escapeHtml(detail)}${visit?.endTime ? ` · ${escapeHtml(visit.endTime)}까지` : ''}</p>
         ${index && (route || !plan.validation) ? `<p class="details travel-time">앞 장소에서 · ${travelTime(route)}</p>` : ''}
         ${visit?.hours ? `<p class="details place-source">${sourceLink(visit.hours.sourceUrl, '방문일 운영시간 출처')}</p>` : ''}

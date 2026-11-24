@@ -64,6 +64,8 @@ const tripStorage = (() => {
       locallyEdited: Boolean(plan.locallyEdited),
       weatherAvailableThrough: plan.weatherAvailableThrough,
       lodgingName: plan.lodgingName ? redact(plan.lodgingName, 100) : null,
+      fiveStarRequested: Boolean(plan.fiveStarRequested),
+      fiveStarHotel: plan.fiveStarHotel ? { name: redact(plan.fiveStarHotel.name, 100), sourceUrl: publicUrl(plan.fiveStarHotel.sourceUrl) } : null,
       lodgingQuote: plan.lodgingQuote ? {
         kind: plan.lodgingQuote.kind, amount: plan.lodgingQuote.amount,
         sourceUrl: publicUrl(plan.lodgingQuote.sourceUrl), evidence: redact(plan.lodgingQuote.evidence, 250)

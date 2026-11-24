@@ -8,15 +8,22 @@ import { weatherAvailableThrough } from './get-weather.js';
 import { estimateTripBudget } from './estimate-trip-budget.js';
 import { findPlan, rememberPlan } from './plan-snapshots.js';
 import { lodgingQuoteSchema, verifiedLodgingQuote } from './lodging-quote.js';
+import { requestsFiveStar, findFiveStarHotel } from './five-star-hotel.js';
+
+const lodgingGradeSchema = {
+  type: ['object', 'null'], additionalProperties: false, required: ['sourceUrl', 'evidence'],
+  properties: { sourceUrl: { type: 'string' }, evidence: { type: 'string' } }
+};
 
 const categories = ['맛집', '관광', '자연', '휴식', '쇼핑', '이동', '기타'];
 const tripSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['itinerary', 'lodgingName', 'lodgingQuote'],
+  required: ['itinerary', 'lodgingName', 'lodgingQuote', 'lodgingGrade'],
   properties: {
     lodgingName: { type: ['string', 'null'] },
     lodgingQuote: lodgingQuoteSchema,
+    lodgingGrade: lodgingGradeSchema,
     itinerary: {
       type: 'array',
       items: {
@@ -58,10 +65,11 @@ const hasText = (value, max) => typeof value === 'string' && value.trim().length
 const revisionSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['updates', 'reply', 'lodgingName', 'lodgingQuote'],
+  required: ['updates', 'reply', 'lodgingName', 'lodgingQuote', 'lodgingGrade'],
   properties: {
     lodgingName: { type: ['string', 'null'] },
     lodgingQuote: lodgingQuoteSchema,
+    lodgingGrade: lodgingGradeSchema,
     reply: { type: 'string' },
     updates: { type: 'array', items: {
       type: 'object', additionalProperties: false, required: ['day', 'stops', 'reason'],
@@ -151,7 +159,7 @@ function revisionContext(previous, message) {
 }
 
 function reviewRevision(candidate, previous, context) {
-  const { updates, reply, lodgingName, lodgingQuote } = JSON.parse(candidate.output);
+  const { updates, reply, lodgingName, lodgingQuote, lodgingGrade } = JSON.parse(candidate.output);
   const conditions = previous.conditions;
   if (!Array.isArray(updates) || !hasText(reply, 500) ||
       updates.some(update => !integerBetween(update?.day, 1, conditions.days) || !hasText(update.reason, 350)) ||
@@ -161,7 +169,7 @@ function reviewRevision(candidate, previous, context) {
   const formatted = formatPlan({ ...candidate, output: JSON.stringify({ itinerary: raw }) }, conditions);
   const itinerary = formatted.map((day, index) => byDay.has(index + 1) ? day : previous.itinerary[index]);
   const hotel = hasText(lodgingName, 100) ? lodgingName.trim() : previous.lodgingName ?? null;
-  return { itinerary, changedDays: [...byDay.keys()], reply, updates, lodgingName: hotel,
+  return { itinerary, changedDays: [...byDay.keys()], reply, updates, lodgingName: hotel, lodgingGrade, webSources: candidate.webSources,
     lodgingQuote: verifiedLodgingQuote(lodgingQuote, hotel, conditions, candidate.webSources) ??
       (hotel === previous.lodgingName ? previous.lodgingQuote ?? null : null),
     issues: validateItinerary(itinerary, candidate.costs, candidate.weather, conditions) };
@@ -192,6 +200,7 @@ async function generatePlan(response, conditions, previous, message) {
   const started = performance.now();
   try {
     const revision = previous && revisionContext(previous, message);
+    const fiveStarRequested = requestsFiveStar(previous?.fiveStarRequested ? '5성급 호텔' : conditions.request, message);
     const client = new OpenAI({ apiKey, timeout: 45000, maxRetries: 0 });
     const result = await runAgent(client, {
       model,
@@ -217,6 +226,7 @@ async function generatePlan(response, conditions, previous, message) {
         '도보 또는 대중교통 이동 경로와 시간을 꾸며내지 않는다. 자동차 경로가 제공되지 않으면 확인 불가로 안내한다.',
         '예산 계산에는 사용자의 추가 요청에 항목과 전체 금액이 명시된 원화 값만 사용한다. 확인되지 않은 항목은 미확인으로 둔다.',
         '여행에 숙박이 포함되고 특정 호텔을 투숙 숙소로 추천하거나 사용자가 지정하면 lodgingName에 시설명을 적는다. 식당 방문만 하는 호텔은 포함하지 않는다. 그 외에는 null을 사용한다.',
+        '5성급 숙소를 요청하면 당일 일정이어도 숙박 후보를 lodgingName에 추천한다. 웹 검색에서 5성급 등급 목록이나 공식 출처를 찾아 호텔명과 5성 표기가 함께 있는 인용문과 출처 URL을 lodgingGrade에 넣는다. 등급을 확인할 수 없으면 lodgingGrade는 null이다.',
         '특정 숙소를 추천하면 web_search로 해당 숙소의 네이버 호텔·플레이스 및 공식 사이트 가격을 확인한다. 체크인·체크아웃 날짜와 인원, 전체 객실 총액이 같은 공개 자료에서 확인되는 경우만 lodgingQuote.kind를 stay_total로 쓴다.',
         '조건이 같지 않아도 해당 호텔의 공개된 1박 기준가가 있으면 nightly_reference로 기록한다. 시작가나 특가라도 정확한 액수와 조건이 확인될 때만 사용한다. 가격이 없으면 null을 사용한다.',
         'lodgingQuote.sourceUrl은 실제 사용한 출처 URL이고 evidence는 검색 결과에 있는 원화 금액·가격 조건을 그대로 인용한다. stay_total은 출처에 적힌 두 날짜와 인원도 evidence에 포함한다. 확인한 내용 외의 문구는 더하지 않는다.',
@@ -237,12 +247,20 @@ async function generatePlan(response, conditions, previous, message) {
     }, conditions, trace, candidate => {
       if (revision) return reviewRevision(candidate, previous, revision);
       const itinerary = formatPlan(candidate, conditions);
-      const { lodgingName, lodgingQuote } = JSON.parse(candidate.output);
+      const { lodgingName, lodgingQuote, lodgingGrade } = JSON.parse(candidate.output);
       const hotel = hasText(lodgingName, 100) ? lodgingName.trim() : null;
-      return { itinerary, lodgingName: hotel, lodgingQuote: verifiedLodgingQuote(lodgingQuote, hotel, conditions, candidate.webSources),
+      return { itinerary, lodgingName: hotel, lodgingGrade, webSources: candidate.webSources,
+        lodgingQuote: verifiedLodgingQuote(lodgingQuote, hotel, conditions, candidate.webSources),
         issues: validateItinerary(itinerary, candidate.costs, candidate.weather, conditions) };
     }, revision);
     const agentTime = performance.now() - started;
+    let fiveStarHotel = null;
+    if (fiveStarRequested) {
+      fiveStarHotel = previous?.fiveStarHotel?.name === result.lodgingName && previous.fiveStarHotel ||
+        await findFiveStarHotel(conditions.region, result.lodgingName, result.lodgingGrade, result.webSources);
+      if (fiveStarHotel?.name !== result.lodgingName) result.lodgingQuote = null;
+      result.lodgingName = fiveStarHotel?.name ?? null;
+    }
     const affectedDays = revision ? new Set(result.changedDays) : null;
     result.itinerary = await fillItineraryCoordinates(result.itinerary, conditions.region, trace, affectedDays);
     if (conditions.transport === '자동차') {
@@ -264,7 +282,7 @@ async function generatePlan(response, conditions, previous, message) {
       return before === after ? [] : [{ day: index + 1, before, after }];
     });
     const planId = rememberPlan({ conditions, itinerary: result.itinerary, costs: result.costs, lodgingName: result.lodgingName,
-      lodgingQuote: result.lodgingQuote, weather: result.weather, issues: result.issues });
+      lodgingQuote: result.lodgingQuote, fiveStarHotel, fiveStarRequested, weather: result.weather, issues: result.issues });
     const changes = revision ? changesFrom(previous.itinerary).map(change => ({
       ...change, reason: result.updates.find(update => update.day === change.day)?.reason
     })) : [];
@@ -275,6 +293,8 @@ async function generatePlan(response, conditions, previous, message) {
       itinerary: result.itinerary,
       costs: result.costs.map(({ category, amount, status, basis }) => [category, amount, status, basis]),
       lodgingName: result.lodgingName,
+      fiveStarRequested,
+      fiveStarHotel,
       lodgingQuote: result.lodgingQuote,
       weather: result.weather,
       weatherAvailableThrough: weatherAvailableThrough(),
