@@ -1,0 +1,15 @@
+.git/
+.vercel/
+.env
+.env.*
+.npmrc
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.log
+.npm-cache/
+node_modules/
+trip-planner/
+trip-planner-site.tar

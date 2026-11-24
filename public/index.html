@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="취향과 예산에 맞춰 국내 여행 일정을 만들어 보세요."><title>어디로 · 국내 여행 플래너</title><link rel="stylesheet" href="style.css"><script defer src="trip-map.js"></script><script defer src="app.js"></script><script defer src="trip-storage.js"></script><script defer src="saved-trips.js"></script></head>
+<body><header class="top"><div class="wrap nav"><a class="brand" href="#"><span class="logo">✦</span> 어디로<span class="dot">.</span></a><span class="mode"><i></i> 샘플 모드</span></div></header>
+<main class="wrap"><section class="hero"><div><span class="eyebrow">✦ &nbsp; 국내 여행 플래너</span><h1>이번 여행,<br>어디로 떠날까요?</h1><p>취향과 예산에 맞춰 나만의 국내 여행을 계획해 보세요.</p></div><span class="caption">⌖ &nbsp; 제주 성산일출봉</span></section>
+<div class="columns"><section class="card form-card" aria-labelledby="form-title"><div class="section-head"><span class="tile">☷</span><div><h2 id="form-title">여행 조건</h2><p>떠나고 싶은 여행을 알려주세요.</p></div></div>
+<form id="planner"><label class="field">여행 지역<select name="region"><option>제주도</option><option>강릉</option><option>부산</option><option>경주</option><option>전주</option></select></label>
+<div class="pair"><label class="field">출발일<input name="start" type="date" required></label><label class="field">여행 기간<select name="days"><option value="1">당일치기</option><option value="2">1박 2일</option><option value="3" selected>2박 3일</option><option value="4">3박 4일</option><option value="5">4박 5일</option></select></label></div>
+<div class="pair"><label class="field">여행 인원 <span class="input-unit"><input name="people" type="number" min="1" max="30" value="2" required><span>명</span></span></label><label class="field">총예산 <span class="input-unit"><input name="budget" type="number" min="1" max="100000000" value="600000" required><span>원</span></span></label></div>
+<fieldset><legend>여행 취향 <small>복수 선택</small></legend><div class="chips" id="tastes"></div></fieldset>
+<fieldset><legend>이동수단</legend><div class="chips transport"><label><input name="transport" type="radio" value="자동차" checked><span>자동차</span></label><label><input name="transport" type="radio" value="대중교통"><span>대중교통</span></label><label><input name="transport" type="radio" value="도보"><span>도보</span></label></div></fieldset>
+<div class="pair"><label class="field">하루 최대 방문 장소<input name="maxStops" type="number" min="1" max="5" value="3" required></label><label class="field">구간별 이동 제한 <small>분</small><input name="maxTravelMinutes" type="number" min="1" max="600" placeholder="선택"></label></div>
+<label class="field">추가 요청 <small>선택</small><textarea name="request" rows="3" maxlength="300" placeholder="예: 일정은 여유롭게, 카페도 들르고 싶어요."></textarea></label>
+<button class="submit" type="submit">✦ &nbsp; 여행 일정 만들기</button><p class="feedback" role="status" id="status"></p><p class="feedback error" role="alert" id="plan-error"></p></form></section>
+<section class="card result" aria-labelledby="result-title" id="results"><div class="section-head"><span class="tile">⌖</span><div><h2 id="result-title">여행 플랜</h2><p>일정과 동선, 예상 경비를 한곳에서 확인하세요.</p></div></div><div class="summary"><div><span class="summary-label">추천 여행</span><h3 id="trip"></h3><p id="meta"></p></div><span class="sample">샘플 일정</span></div>
+<div class="tabs" role="tablist" aria-label="여행 결과"><button role="tab" id="tab-plan" aria-controls="panel" aria-selected="true" data-tab="plan">▤ <span>날짜별 일정</span></button><button role="tab" id="tab-map" aria-controls="panel" aria-selected="false" data-tab="map" tabindex="-1">⌖ <span>지도</span></button><button role="tab" id="tab-budget" aria-controls="panel" aria-selected="false" data-tab="budget" tabindex="-1">₩ <span>예산</span></button><button role="tab" id="tab-log" aria-controls="panel" aria-selected="false" data-tab="log" tabindex="-1">↯ <span>Agent 실행 기록</span></button></div>
+<div class="panel" role="tabpanel" id="panel" aria-labelledby="tab-plan" tabindex="0"></div>
+<section class="revision-chat" aria-labelledby="revision-title">
+  <div class="revision-heading"><h3 id="revision-title">대화로 일정 수정</h3><button type="button" id="undo-revision" class="undo-button" disabled>직전 수정 되돌리기</button></div>
+  <p class="details" id="revision-hint">AI 일정을 만들면 수정 요청을 보낼 수 있어요.</p>
+  <div id="revision-messages" class="revision-messages" role="log" aria-label="일정 수정 대화"></div>
+  <form id="revision-form">
+    <label class="field">변경 요청<textarea name="message" rows="2" maxlength="600" required disabled placeholder="예: 2일차 오전을 실내 미술관으로 바꿔 줘."></textarea></label>
+    <button type="submit" class="submit" disabled>변경 요청 보내기</button>
+  </form>
+  <p id="revision-status" class="feedback" role="status"></p>
+  <p id="revision-error" class="feedback error" role="alert"></p>
+</section></section></div>
+<section class="card place-search" aria-labelledby="place-title">
+  <div class="section-head"><span class="tile">⌕</span><div><h2 id="place-title">장소 검색</h2><p>여행 조건에서 선택한 지역을 NAVER에서 검색합니다.</p></div></div>
+  <form id="place-form">
+    <label class="field">검색어<input name="keyword" type="search" placeholder="예: 관광지, 음식점, 카페" maxlength="80" required></label>
+    <button type="submit" class="submit">장소 검색</button>
+  </form>
+  <p class="feedback" id="place-status" role="status"></p>
+  <p class="feedback error" id="place-error" role="alert"></p>
+  <ul class="place-list" id="place-results"></ul>
+</section>
+<section class="card lodging-section" aria-labelledby="lodging-title">
+  <div class="section-head"><span class="tile" aria-hidden="true">⌂</span><div><h2 id="lodging-title">일정에 맞는 숙소</h2><p id="lodging-hint">AI 일정을 만든 뒤 숙소를 비교할 수 있어요.</p></div></div>
+  <form id="lodging-form">
+    <label class="field"><input type="checkbox" name="verifyBooking"> 공식 예약 페이지도 확인</label>
+    <button type="submit" class="submit" disabled>숙소 추천 받기</button>
+  </form>
+  <p id="lodging-status" class="feedback" role="status"></p>
+  <p id="lodging-error" class="feedback error" role="alert"></p>
+  <div id="lodging-results"></div>
+</section>
+<section class="card saved-section" aria-labelledby="saved-title">
+  <div class="section-head"><span class="tile" aria-hidden="true">▤</span><div><h2 id="saved-title">저장된 여행 계획</h2><p>이 브라우저에 여행 일정을 보관합니다.</p></div></div>
+  <form id="save-trip-form">
+    <label class="field">여행 계획 이름 <small>선택</small><input name="title" maxlength="80" placeholder="비워 두면 여행 지역과 출발일을 사용합니다."></label>
+    <button class="submit" type="submit">현재 일정 저장</button>
+  </form>
+  <p id="saved-status" class="feedback" role="status"></p>
+  <p id="saved-error" class="feedback error" role="alert"></p>
+  <ul id="saved-trips" class="place-list"></ul>
+  <form id="edit-saved-trip" class="saved-editor" hidden></form>
+</section></main>
+<footer class="wrap footer"><span>어디로<span class="dot">.</span></span><span>국내 여행 플래너 · 샘플 데이터</span></footer></body></html>
