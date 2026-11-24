@@ -62,7 +62,8 @@ const tripStorage = (() => {
         changes: plan.validation.changes.map(({ day, before, after }) => ({ day, before: redact(before), after: redact(after) }))
       } : null,
       locallyEdited: Boolean(plan.locallyEdited),
-      weatherAvailableThrough: plan.weatherAvailableThrough
+      weatherAvailableThrough: plan.weatherAvailableThrough,
+      lodgingName: plan.lodgingName ? redact(plan.lodgingName, 100) : null
     };
   }
 

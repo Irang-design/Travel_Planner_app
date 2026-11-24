@@ -1,6 +1,6 @@
 const won = value => value.toLocaleString('ko-KR') + '원';
 
-export function estimateTripBudget(costs, itinerary, { people, days, transport }) {
+export function estimateTripBudget(costs, itinerary, { people, days, transport, request }, lodgingName) {
   const attractionCount = itinerary.flat().filter(stop => stop[2] === '관광').length;
   const mealCount = itinerary.reduce((sum, stops) => sum + Math.max(1, stops.filter(stop => stop[2] === '맛집').length), 0);
   const nights = Math.max(days - 1, 0);
@@ -44,6 +44,10 @@ export function estimateTripBudget(costs, itinerary, { people, days, transport }
   return costs.map(item => {
     const estimate = defaults[item.category];
     if (!estimate || item.origin === 'manual' || (item.amount !== null && item.origin !== 'default')) return item;
+    if (item.category === '숙박' && nights && (lodgingName || /[45]\s*성급?|특급\s*호텔|럭셔리\s*호텔/.test(request ?? ''))) {
+      return { category: item.category, amount: null, status: 'unknown', origin: 'default',
+        basis: `${lodgingName ?? '요청한 등급의 호텔'} · 체크인·체크아웃 날짜와 인원에 맞는 총 객실 요금을 확인해 주세요.` };
+    }
     const [amount, basis] = estimate;
     return { ...item, amount, status: 'estimated', origin: 'default', basis };
   });

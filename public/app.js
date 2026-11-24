@@ -109,6 +109,7 @@ function budgetEditor(budget, costs) {
       <label class="field">총예산 (원)<input type="number" name="total" min="1" max="100000000" step="1" value="${budget}" required></label>
       <div class="pair">${costs.map(([label, value]) =>
         `<label class="field">${escapeHtml(label)} (원)<input name="cost" type="number" min="0" max="100000000" step="1" value="${value ?? ''}" placeholder="미확인"></label>`).join('')}</div>
+      ${plan.lodgingName ? `<label class="field"><input type="checkbox" name="lodgingConfirmed"> ${escapeHtml(plan.lodgingName)} 예약 화면에서 확인한 총 숙박 요금입니다.</label>` : ''}
       <button type="submit" class="submit">예산 반영</button>
       <p class="feedback error" id="budget-error" role="alert"></p>
     </form>
@@ -192,7 +193,7 @@ function render() {
     const partial = known.length < costs.length;
     panel.innerHTML = `<table class="budget-table"><caption>예상 비용 · ${people}명 기준</caption>
       <thead><tr><th scope="col">항목</th><th scope="col">금액</th><th scope="col">상태</th></tr></thead>
-      <tbody>${costs.map(([label, value, status, basis]) => `<tr><th scope="row">${escapeHtml(label)}${basis ? `<p class="details budget-basis">${escapeHtml(basis)}</p>` : ''}</th><td>${value === null ? '—' : money(value)}</td><td>${value === null ? '미확인' : status === 'estimated' || !ai ? '추정' : '입력 금액'}</td></tr>`).join('')}</tbody>
+      <tbody>${costs.map(([label, value, status, basis]) => `<tr><th scope="row">${escapeHtml(label)}${label === '숙박' && plan.lodgingName && !basis ? `<p class="details budget-basis">${escapeHtml(plan.lodgingName)}</p>` : ''}${basis ? `<p class="details budget-basis">${escapeHtml(basis)}</p>` : ''}</th><td>${value === null ? '—' : money(value)}</td><td>${value === null ? '미확인' : status === 'estimated' || !ai ? '추정' : '입력 금액'}</td></tr>`).join('')}</tbody>
       <tfoot><tr><th scope="row">총예산</th><td>${money(budget)}</td><td></td></tr>
       <tr><th scope="row">${partial ? '비용 소계' : '비용 합계'}</th><td>${known.length ? money(total) : '미확인'}</td><td></td></tr>
       <tr><th scope="row">${known.length && remaining < 0 ? '예산 초과' : '잔여 예산'}</th><td>${known.length ? money(Math.abs(remaining)) : '미확인'}</td><td>${known.length && partial ? '미확인 항목 제외' : ''}</td></tr></tfoot></table>`;
@@ -254,16 +255,20 @@ panel.addEventListener('submit', async event => {
   const data = new FormData(editor);
   const budget = Number(data.get('total'));
   const amounts = data.getAll('cost').map(value => value === '' ? null : Number(value));
+  const lodgingConfirmed = data.has('lodgingConfirmed');
   const button = editor.querySelector('button[type="submit"]');
   button.disabled = submitButton.disabled = true;
   refreshRevisionControls();
   editor.querySelector('#budget-error').textContent = '';
   try {
+    if (lodgingConfirmed && amounts[current.costs.findIndex(([label]) => label === '숙박')] == null) {
+      throw new Error('확인한 호텔의 총 숙박 요금을 입력해 주세요.');
+    }
     if (current.planId) {
       const response = await fetch('/api/plan/budget', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ planId: current.planId, budget, amounts }),
+        body: JSON.stringify({ planId: current.planId, budget, amounts, lodgingConfirmed }),
         signal: AbortSignal.timeout(15000)
       });
       const result = await response.json().catch(() => null);
@@ -273,8 +278,10 @@ panel.addEventListener('submit', async event => {
       plan = { ...current, planId: result.planId, budget: result.budget, costs: result.costs, validation };
       previousPlan = current;
     } else {
-      const costs = current.costs.map((item, index) => amounts[index] === item[1] ? item :
-        [item[0], amounts[index], amounts[index] === null ? 'unknown' : 'estimated']);
+      const costs = current.costs.map((item, index) => {
+        if (item[0] === '숙박' && lodgingConfirmed) return [item[0], amounts[index], 'confirmed', `${current.lodgingName} · 사용자가 확인한 총 객실 요금`];
+        return amounts[index] === item[1] ? item : [item[0], amounts[index], amounts[index] === null ? 'unknown' : 'estimated'];
+      });
       plan = { ...current, costs, budget, validation: null, locallyEdited: true };
     }
     form.elements.budget.value = plan.budget;
