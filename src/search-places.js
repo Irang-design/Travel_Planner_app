@@ -17,7 +17,7 @@ function coordinate(value, limit) {
   return Math.abs(degrees) <= limit ? degrees : null;
 }
 
-export async function search_places(region, keyword) {
+export async function search_places(region, keyword, signal = AbortSignal.timeout(10000)) {
   region = clean(region);
   keyword = clean(keyword);
   if (!region || region.length > 50 || !keyword || keyword.length > 80) {
@@ -33,7 +33,7 @@ export async function search_places(region, keyword) {
   const response = await fetch(url, {
     headers: { 'X-NCP-APIGW-API-KEY-ID': id, 'X-NCP-APIGW-API-KEY': secret },
     redirect: 'error',
-    signal: AbortSignal.timeout(10000)
+    signal
   });
   if (response.status === 401 || response.status === 403) {
     throw new PlaceSearchError(502, 'NAVER API HUB 인증 정보와 지역 검색 사용 권한을 확인해 주세요.');

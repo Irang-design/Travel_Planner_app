@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import { AgentLimitError, runAgent } from './agent-loop.js';
 import { coordinateKey, routeKey } from './agent-tools.js';
 import { checkVisit, validateItinerary } from './validate-itinerary.js';
+import { fillItineraryCoordinates } from './itinerary-coordinates.js';
 import { findPlan, rememberPlan } from './plan-snapshots.js';
 
 const categories = ['맛집', '관광', '자연', '휴식', '쇼핑', '이동', '기타'];
@@ -214,6 +215,9 @@ async function generatePlan(response, conditions, previous, message) {
       const itinerary = formatPlan(candidate, conditions);
       return { itinerary, issues: validateItinerary(itinerary, candidate.costs, candidate.weather, conditions) };
     }, revision);
+    result.itinerary = await fillItineraryCoordinates(result.itinerary, conditions.region, trace,
+      revision ? new Set(result.changedDays) : null);
+    result.issues = validateItinerary(result.itinerary, result.costs, result.weather, conditions);
     const remaining = new Set(result.issues.map(issue => issue.id));
     const describeDay = stops => stops.map(([time, name, , , , , visit]) =>
       `${time}${visit.endTime ? '–' + visit.endTime : ''} ${name}`).join(' · ');
