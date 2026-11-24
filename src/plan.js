@@ -174,6 +174,7 @@ async function generatePlan(response, conditions, previous, message) {
   }
 
   const trace = [];
+  const started = performance.now();
   try {
     const revision = previous && revisionContext(previous, message);
     const client = new OpenAI({ apiKey, timeout: 45000, maxRetries: 0 });
@@ -186,6 +187,7 @@ async function generatePlan(response, conditions, previous, message) {
         '시간은 HH:MM 형식으로 작성하고 detail에는 이 장소를 추천하는 이유를 간결히 적는다.',
         '지역, 인원, 이동수단, 취향과 총예산을 고려하고 동선을 가까운 장소끼리 구성한다.',
         '필요한 도구만 유연하게 선택한다. 최신 관광 정보나 공식 안내가 필요한 경우 web_search를 사용한다.',
+        '서로 독립적인 지역 검색과 날씨 확인, 또는 이미 좌표를 받은 독립 자동차 경로 요청은 가능한 경우 한 응답에서 함께 호출한다. 동일 조건으로 조회한 장소와 경로를 반복 호출하지 않는다.',
         '날씨를 요청했거나 야외 방문의 선택에 필요한 경우 get_weather를 초기에 한 번 호출한다. 이미 받은 예보는 재사용한다.',
         'get_weather에서 rainExpected가 true인 날짜에 야외 활동이 잡혀 있다면 해당 지역의 실내 관광지를 search_places로 찾아 검증된 후보로 바꾼다. 실내 후보는 사용자 취향, 장소 개수와 이동 제한에 맞춰 선택한다. 실내 일정이 이미 충분하면 추가 검색하지 않는다.',
         '날씨 미확인은 강수 여부를 모르는 상태다. 날씨를 추정하거나 맑다고 가정하지 않는다.',
@@ -215,6 +217,7 @@ async function generatePlan(response, conditions, previous, message) {
       const itinerary = formatPlan(candidate, conditions);
       return { itinerary, issues: validateItinerary(itinerary, candidate.costs, candidate.weather, conditions) };
     }, revision);
+    const agentTime = performance.now() - started;
     result.itinerary = await fillItineraryCoordinates(result.itinerary, conditions.region, trace,
       revision ? new Set(result.changedDays) : null);
     result.issues = validateItinerary(result.itinerary, result.costs, result.weather, conditions);
@@ -230,6 +233,8 @@ async function generatePlan(response, conditions, previous, message) {
     const changes = revision ? changesFrom(previous.itinerary).map(change => ({
       ...change, reason: result.updates.find(update => update.day === change.day)?.reason
     })) : [];
+    const coordinatesTime = performance.now() - started - agentTime;
+    response.set?.('Server-Timing', `agent;dur=${Math.round(agentTime)}, coordinates;dur=${Math.round(coordinatesTime)}`);
     return response.json({
       planId,
       itinerary: result.itinerary,

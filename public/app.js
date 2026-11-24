@@ -262,12 +262,20 @@ form.addEventListener('submit', async event => {
   errorMessage.textContent = '';
   failedTrace = null;
   panel.setAttribute('aria-busy', 'true');
+  const started = performance.now();
+  const progress = setInterval(() => {
+    const seconds = Math.floor((performance.now() - started) / 1000);
+    status.textContent = seconds >= 15
+      ? `일정 생성이 진행 중입니다. 장소 검색이나 경로 확인이 포함되면 더 걸릴 수 있어요. · ${seconds}초 경과`
+      : `여행 조건에 맞춰 일정을 만드는 중… · ${seconds}초 경과`;
+  }, 5000);
 
   try {
     const response = await fetch('/api/plan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(conditions)
+      body: JSON.stringify(conditions),
+      signal: AbortSignal.timeout(145000)
     });
     const result = await response.json().catch(() => null);
     if (!response.ok || !result) {
@@ -290,10 +298,13 @@ form.addEventListener('submit', async event => {
     selectTab(tabs[0]);
     status.textContent = `${plan.region} ${plan.days}일 여행 일정을 만들었습니다.`;
     document.querySelector('#results').scrollIntoView({ block: 'nearest' });
-  } catch {
+  } catch (error) {
     status.textContent = '';
-    errorMessage.textContent = '여행 일정을 불러오지 못했어요. 서버 연결을 확인하고 다시 시도해 주세요.';
+    errorMessage.textContent = error.name === 'TimeoutError'
+      ? '응답이 너무 오래 걸렸어요. 여행 기간이나 추가 요청을 줄여 다시 시도해 주세요.'
+      : '여행 일정을 불러오지 못했어요. 서버 연결을 확인하고 다시 시도해 주세요.';
   } finally {
+    clearInterval(progress);
     submitButton.disabled = false;
     refreshRevisionControls();
     submitButton.textContent = submitLabel;

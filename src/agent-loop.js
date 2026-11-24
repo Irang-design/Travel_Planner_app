@@ -26,15 +26,37 @@ export async function runAgent(client, options, conditions, trace, review, revis
   let best = null;
   let original = null;
   let repairFailed = false;
+  const lookupCache = new Map();
+  const runCall = async call => {
+    try {
+      const args = JSON.parse(call.arguments);
+      if (call.name === 'search_places' || call.name === 'get_routes') {
+        const key = JSON.stringify([call.name, args]);
+        if (!lookupCache.has(key)) {
+          lookupCache.set(key, executeTool(call.name, args, conditions, state).catch(error => {
+            lookupCache.delete(key);
+            throw error;
+          }));
+          return await lookupCache.get(key);
+        }
+        const cached = await lookupCache.get(key);
+        return { ...cached, summary: cached.summary + ' · 이번 요청의 조회 결과 재사용' };
+      }
+      return await executeTool(call.name, args, conditions, state);
+    } catch {
+      const summary = '도구 실행 실패 · 결과 확인 불가';
+      return { result: { status: 'error', message: summary }, summary };
+    }
+  };
 
   try {
     for (let round = 0; round < phaseEnd; round++) {
-      const tools = round === phaseEnd - 1 ? [] : agentTools;
+      const tools = round === phaseEnd - 1 || functionCalls >= maxFunctionCalls ? [] : agentTools;
       const response = await client.responses.create({
         ...options,
         input,
         tools,
-        parallel_tool_calls: false,
+        parallel_tool_calls: tools.length > 0,
         max_tool_calls: 2,
         include: ['reasoning.encrypted_content', 'web_search_call.action.sources']
       }, { signal });
@@ -72,22 +94,32 @@ export async function runAgent(client, options, conditions, trace, review, revis
         continue;
       }
       if (!calls.length) throw new Error('Missing itinerary');
-      if (!tools.length || functionCalls + calls.length > maxFunctionCalls) {
+      if (!tools.length) {
         repairFailed = best !== null;
         break;
       }
-      functionCalls += calls.length;
+      const allowed = calls.slice(0, maxFunctionCalls - functionCalls);
+      functionCalls += allowed.length;
       input.push(...response.output);
+      signal.throwIfAborted();
+      const outputs = new Map();
+      for (const names of [['search_places', 'get_weather'], ['get_routes']]) {
+        const parallel = allowed.filter(call => names.includes(call.name));
+        // Weather writes a shared forecast, so resolve one weather result per batch.
+        const weather = parallel.filter(call => call.name === 'get_weather');
+        await Promise.all([
+          ...parallel.filter(call => call.name !== 'get_weather').map(async call => outputs.set(call, await runCall(call))),
+          ...(weather.length ? [runCall(weather[0]).then(result => weather.forEach(call => outputs.set(call, result)))] : [])
+        ]);
+      }
+      for (const call of allowed) {
+        if (!outputs.has(call)) outputs.set(call, await runCall(call));
+      }
       for (const call of calls) {
-        signal.throwIfAborted();
-        let result;
-        let summary;
-        let sources;
-        try {
-          ({ result, summary, sources } = await executeTool(call.name, JSON.parse(call.arguments), conditions, state));
-        } catch {
-          summary = '도구 실행 실패 · 결과 확인 불가';
-          result = { status: 'error', message: summary };
+        const { result, summary, sources } = outputs.get(call) ?? {};
+        if (!result) {
+          input.push({ type: 'function_call_output', call_id: call.call_id, output: JSON.stringify({ status: 'error', message: '도구 호출 한도에 도달했습니다.' }) });
+          continue;
         }
         trace.push({ name: call.name, summary, sources });
         input.push({ type: 'function_call_output', call_id: call.call_id, output: JSON.stringify(result) });
