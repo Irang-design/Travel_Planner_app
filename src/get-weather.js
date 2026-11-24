@@ -20,6 +20,17 @@ const dayMs = 86400000;
 const dateString = time => new Date(time).toISOString().slice(0, 10);
 const compact = date => date.replaceAll('-', '');
 
+function midPublication(now) {
+  const issued = new Date(now - 25 * 60000);
+  const hour = issued.getUTCHours();
+  return { date: dateString(issued.getTime() - (hour < 6 ? dayMs : 0)), time: hour < 6 || hour >= 18 ? '1800' : '0600' };
+}
+
+export function weatherAvailableThrough() {
+  const publication = midPublication(Date.now() + 9 * 3600000);
+  return dateString(Date.parse(publication.date) + 10 * dayMs);
+}
+
 async function forecastItems(endpoint, params) {
   const url = new URL(endpoint);
   url.search = new URLSearchParams({ dataType: 'JSON', pageNo: '1', ...params });
@@ -60,11 +71,9 @@ export async function get_weather(region, dates) {
   const grid = Object.hasOwn(grids, region) ? grids[region] : null;
   const shortRange = date => date >= today && date <= lastDate;
   const shortEligible = date => Boolean(grid) && shortRange(date);
-  const issuedMid = new Date(now - 25 * 60000);
-  const midHour = issuedMid.getUTCHours();
-  const midDate = dateString(issuedMid.getTime() - (midHour < 6 ? dayMs : 0));
-  const midOffset = date => (Date.parse(date) - Date.parse(midDate)) / dayMs;
-  const midRange = date => midOffset(date) >= 4 && midOffset(date) <= 11;
+  const mid = midPublication(now);
+  const midOffset = date => (Date.parse(date) - Date.parse(mid.date)) / dayMs;
+  const midRange = date => midOffset(date) >= 4 && midOffset(date) <= 10;
   const zone = midZones.find(([pattern]) => pattern.test(region));
   const midEligible = date => !shortEligible(date) && Boolean(zone) && midRange(date);
   let key = process.env.KMA_SERVICE_KEY?.trim();
@@ -79,7 +88,7 @@ export async function get_weather(region, dates) {
       base_time: String(baseHour).padStart(2, '0') + '00', nx, ny
     }).catch(() => null) : [],
     key && dates.some(midEligible) ? forecastItems(midEndpoint, {
-      serviceKey: key, numOfRows: '1', regId: zone[1], tmFc: compact(midDate) + (midHour < 6 || midHour >= 18 ? '1800' : '0600')
+      serviceKey: key, numOfRows: '1', regId: zone[1], tmFc: compact(mid.date) + mid.time
     }).catch(() => null) : []
   ]);
   return dates.map(date => {

@@ -95,6 +95,26 @@ function weatherNote(weather) {
   return `<p class="note place-source">날씨 · ${forecast}${area} · ${sourceLink(weather.source, label)}</p>`;
 }
 
+function weatherWindow() {
+  if (!plan.weatherAvailableThrough) return '';
+  const date = dateFormat.format(offsetDate(plan.weatherAvailableThrough, 0));
+  return `<p class="details">이 일정 생성 시점 기준, 날씨는 최대 <strong>${date}</strong>까지 조회할 수 있어요. 지역과 기상청 발표 여부에 따라 예보가 없을 수 있습니다.</p>`;
+}
+
+const budgetNotices = new WeakMap();
+function budgetEditor(budget, costs) {
+  return `<details class="budget-editor"><summary>예산 수정</summary>
+    <p class="details">직접 수정한 금액은 추정치로 표시합니다. 비용을 모르면 칸을 비워 두세요.</p>
+    <form id="edit-budget">
+      <label class="field">총예산 (원)<input type="number" name="total" min="1" max="100000000" step="1" value="${budget}" required></label>
+      <div class="pair">${costs.map(([label, value]) =>
+        `<label class="field">${escapeHtml(label)} (원)<input name="cost" type="number" min="0" max="100000000" step="1" value="${value ?? ''}" placeholder="미확인"></label>`).join('')}</div>
+      <button type="submit" class="submit">예산 반영</button>
+      <p class="feedback error" id="budget-error" role="alert"></p>
+    </form>
+  </details><p class="feedback" role="status">${escapeHtml(budgetNotices.get(plan) ?? '')}</p>`;
+}
+
 function validationReport(report) {
   if (!report) return '';
   const conflicts = report.issues.filter(issue => issue.severity === 'conflict');
@@ -128,7 +148,7 @@ function render() {
   panel.setAttribute('aria-labelledby', 'tab-' + activeTab);
 
   if (activeTab === 'plan') {
-    panel.innerHTML = dayControls() + `<h3 class="day-title">${activeDay + 1}일차 · ${date}</h3>${weatherNote(plan.weather?.[activeDay])}<ol class="timeline">${stops.map(([time, name, category, detail, place, route, visit], index) =>
+    panel.innerHTML = dayControls() + `<h3 class="day-title">${activeDay + 1}일차 · ${date}</h3>${weatherNote(plan.weather?.[activeDay])}${weatherWindow()}<ol class="timeline">${stops.map(([time, name, category, detail, place, route, visit], index) =>
       `<li><time>${escapeHtml(time)}</time><span class="pin"></span><div><b>${escapeHtml(name)}</b><p class="details">${escapeHtml(category)} · ${escapeHtml(detail)}${visit?.endTime ? ` · ${escapeHtml(visit.endTime)}까지` : ''}</p>
         ${index ? `<p class="details travel-time">앞 장소에서 · ${travelTime(route)}</p>` : ''}
         ${visit?.hours ? `<p class="details place-source">${sourceLink(visit.hours.sourceUrl, '방문일 운영시간 출처')}</p>` : ''}
@@ -163,6 +183,7 @@ function render() {
       <tfoot><tr><th scope="row">총예산</th><td>${money(budget)}</td><td></td></tr>
       <tr><th scope="row">${partial ? '비용 소계' : '비용 합계'}</th><td>${known.length ? money(total) : '미확인'}</td><td></td></tr>
       <tr><th scope="row">${known.length && remaining < 0 ? '예산 초과' : '잔여 예산'}</th><td>${known.length ? money(Math.abs(remaining)) : '미확인'}</td><td>${known.length && partial ? '미확인 항목 제외' : ''}</td></tr></tfoot></table>`;
+    if (ai) panel.innerHTML += budgetEditor(budget, costs);
   } else {
     const trace = failedTrace ?? plan.trace ?? [];
     panel.innerHTML = `<h3 class="day-title">Agent 실행 기록${failedTrace ? ' · 생성 실패' : ''}</h3>`;
@@ -210,6 +231,50 @@ const submitButton = form.querySelector('.submit');
 const status = document.querySelector('#status');
 const errorMessage = document.querySelector('#plan-error');
 const submitLabel = submitButton.textContent;
+
+panel.addEventListener('submit', async event => {
+  const editor = event.target;
+  if (editor.id !== 'edit-budget') return;
+  event.preventDefault();
+  if (submitButton.disabled) return;
+  const current = plan;
+  const data = new FormData(editor);
+  const budget = Number(data.get('total'));
+  const amounts = data.getAll('cost').map(value => value === '' ? null : Number(value));
+  const button = editor.querySelector('button[type="submit"]');
+  button.disabled = submitButton.disabled = true;
+  refreshRevisionControls();
+  editor.querySelector('#budget-error').textContent = '';
+  try {
+    if (current.planId) {
+      const response = await fetch('/api/plan/budget', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planId: current.planId, budget, amounts }),
+        signal: AbortSignal.timeout(15000)
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result) throw new Error(result?.error || '예산을 반영하지 못했습니다.');
+      const validation = current.validation && { ...current.validation, issues: result.issues,
+        resolved: current.validation.resolved.filter(issue => !result.issues.some(currentIssue => currentIssue.code === issue.code)) };
+      plan = { ...current, planId: result.planId, budget: result.budget, costs: result.costs, validation };
+      previousPlan = current;
+    } else {
+      const costs = current.costs.map((item, index) => amounts[index] === item[1] ? item :
+        [item[0], amounts[index], amounts[index] === null ? 'unknown' : 'estimated']);
+      plan = { ...current, costs, budget, validation: null, locallyEdited: true };
+    }
+    form.elements.budget.value = plan.budget;
+    budgetNotices.set(plan, plan.savedId ? '예산을 반영했습니다. 저장본에 남기려면 현재 일정 저장을 눌러 주세요.' : '예산을 반영했습니다.');
+    render();
+  } catch (error) {
+    const feedback = panel.querySelector('#budget-error');
+    if (feedback) feedback.textContent = error.message;
+  } finally {
+    button.disabled = submitButton.disabled = false;
+    refreshRevisionControls();
+  }
+});
 const revisionForm = document.querySelector('#revision-form');
 const revisionInput = revisionForm.elements.message;
 const revisionButton = revisionForm.querySelector('button');
@@ -471,6 +536,7 @@ revisionForm.addEventListener('submit', async event => {
 undoButton.addEventListener('click', () => {
   if (undoButton.disabled || !previousPlan) return;
   plan = previousPlan;
+  form.elements.budget.value = plan.budget;
   previousPlan = null;
   failedTrace = null;
   selectTab(tabs[0]);

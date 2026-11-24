@@ -4,6 +4,7 @@ import { coordinateKey, routeKey } from './agent-tools.js';
 import { checkVisit, validateItinerary } from './validate-itinerary.js';
 import { fillItineraryCoordinates } from './itinerary-coordinates.js';
 import { normalizeRegion } from './region-name.js';
+import { weatherAvailableThrough } from './get-weather.js';
 import { findPlan, rememberPlan } from './plan-snapshots.js';
 
 const categories = ['맛집', '관광', '자연', '휴식', '쇼핑', '이동', '기타'];
@@ -242,6 +243,7 @@ async function generatePlan(response, conditions, previous, message) {
       itinerary: result.itinerary,
       costs: result.costs.map(({ category, amount, status }) => [category, amount, status]),
       weather: result.weather,
+      weatherAvailableThrough: weatherAvailableThrough(),
       validation: {
         issues: result.issues,
         resolved: result.findings.filter(issue => !remaining.has(issue.id)),

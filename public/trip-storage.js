@@ -60,7 +60,8 @@ const tripStorage = (() => {
         replans: plan.validation.replans, repairFailed: plan.validation.repairFailed,
         changes: plan.validation.changes.map(({ day, before, after }) => ({ day, before: redact(before), after: redact(after) }))
       } : null,
-      locallyEdited: Boolean(plan.locallyEdited)
+      locallyEdited: Boolean(plan.locallyEdited),
+      weatherAvailableThrough: plan.weatherAvailableThrough
     };
   }
 

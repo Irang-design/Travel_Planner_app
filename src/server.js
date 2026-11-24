@@ -4,6 +4,7 @@ import { createPlan, revisePlan } from './plan.js';
 import { listPlaces } from './search-places.js';
 import { recommendLodging } from './lodging.js';
 import { planSessionsReady } from './plan-snapshots.js';
+import { updateBudget } from './update-budget.js';
 
 const app = express();
 const publicDirectory = fileURLToPath(new URL('../public/', import.meta.url));
@@ -23,6 +24,7 @@ app.use('/api/plan', (_request, response, next) => {
 app.post('/api/plan', express.json({ limit: '8kb' }), createPlan);
 app.post('/api/plan/revise', express.json({ limit: '1mb' }), revisePlan);
 app.post('/api/plan/lodging', express.json({ limit: '1mb' }), recommendLodging);
+app.post('/api/plan/budget', express.json({ limit: '1mb' }), updateBudget);
 app.get('/api/places', listPlaces);
 app.get('/api/map-config', (_request, response) => {
   response.json({ clientId: process.env.NAVER_MAPS_WEB_CLIENT_ID?.trim() || process.env.NAVER_MAPS_CLIENT_ID?.trim() || '' });
