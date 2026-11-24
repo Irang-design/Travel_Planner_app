@@ -7,14 +7,16 @@ import { normalizeRegion } from './region-name.js';
 import { weatherAvailableThrough } from './get-weather.js';
 import { estimateTripBudget } from './estimate-trip-budget.js';
 import { findPlan, rememberPlan } from './plan-snapshots.js';
+import { lodgingQuoteSchema, verifiedLodgingQuote } from './lodging-quote.js';
 
 const categories = ['맛집', '관광', '자연', '휴식', '쇼핑', '이동', '기타'];
 const tripSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['itinerary', 'lodgingName'],
+  required: ['itinerary', 'lodgingName', 'lodgingQuote'],
   properties: {
     lodgingName: { type: ['string', 'null'] },
+    lodgingQuote: lodgingQuoteSchema,
     itinerary: {
       type: 'array',
       items: {
@@ -56,9 +58,10 @@ const hasText = (value, max) => typeof value === 'string' && value.trim().length
 const revisionSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['updates', 'reply', 'lodgingName'],
+  required: ['updates', 'reply', 'lodgingName', 'lodgingQuote'],
   properties: {
     lodgingName: { type: ['string', 'null'] },
+    lodgingQuote: lodgingQuoteSchema,
     reply: { type: 'string' },
     updates: { type: 'array', items: {
       type: 'object', additionalProperties: false, required: ['day', 'stops', 'reason'],
@@ -139,16 +142,16 @@ function revisionContext(previous, message) {
     });
   });
   return {
-    input: { conditions: previous.conditions, currentPlan: { itinerary, costs: previous.costs, lodgingName: previous.lodgingName, weather: previous.weather }, changeRequest: message },
+    input: { conditions: previous.conditions, currentPlan: { itinerary, costs: previous.costs, lodgingName: previous.lodgingName, lodgingQuote: previous.lodgingQuote, weather: previous.weather }, changeRequest: message },
     state: { places, coordinates, routes, webSources,
-      costs: previous.costs.map(item => item.origin === 'default' ? { category: item.category, amount: null, status: 'unknown' } : item),
+      costs: previous.costs.map(item => ['default', 'web_quote'].includes(item.origin) ? { category: item.category, amount: null, status: 'unknown' } : item),
       weather: previous.weather, budgetText: previous.conditions.request + '\n' + message },
     baselineIssues: new Set(previous.issues.map(issue => issue.id))
   };
 }
 
 function reviewRevision(candidate, previous, context) {
-  const { updates, reply, lodgingName } = JSON.parse(candidate.output);
+  const { updates, reply, lodgingName, lodgingQuote } = JSON.parse(candidate.output);
   const conditions = previous.conditions;
   if (!Array.isArray(updates) || !hasText(reply, 500) ||
       updates.some(update => !integerBetween(update?.day, 1, conditions.days) || !hasText(update.reason, 350)) ||
@@ -157,8 +160,10 @@ function reviewRevision(candidate, previous, context) {
   const raw = context.input.currentPlan.itinerary.map((day, index) => byDay.get(index + 1)?.stops ?? day);
   const formatted = formatPlan({ ...candidate, output: JSON.stringify({ itinerary: raw }) }, conditions);
   const itinerary = formatted.map((day, index) => byDay.has(index + 1) ? day : previous.itinerary[index]);
-  return { itinerary, changedDays: [...byDay.keys()], reply, updates,
-    lodgingName: hasText(lodgingName, 100) ? lodgingName.trim() : previous.lodgingName ?? null,
+  const hotel = hasText(lodgingName, 100) ? lodgingName.trim() : previous.lodgingName ?? null;
+  return { itinerary, changedDays: [...byDay.keys()], reply, updates, lodgingName: hotel,
+    lodgingQuote: verifiedLodgingQuote(lodgingQuote, hotel, conditions, candidate.webSources) ??
+      (hotel === previous.lodgingName ? previous.lodgingQuote ?? null : null),
     issues: validateItinerary(itinerary, candidate.costs, candidate.weather, conditions) };
 }
 
@@ -212,9 +217,13 @@ async function generatePlan(response, conditions, previous, message) {
         '도보 또는 대중교통 이동 경로와 시간을 꾸며내지 않는다. 자동차 경로가 제공되지 않으면 확인 불가로 안내한다.',
         '예산 계산에는 사용자의 추가 요청에 항목과 전체 금액이 명시된 원화 값만 사용한다. 확인되지 않은 항목은 미확인으로 둔다.',
         '여행에 숙박이 포함되고 특정 호텔을 투숙 숙소로 추천하거나 사용자가 지정하면 lodgingName에 시설명을 적는다. 식당 방문만 하는 호텔은 포함하지 않는다. 그 외에는 null을 사용한다.',
+        '특정 숙소를 추천하면 web_search로 해당 숙소의 네이버 호텔·플레이스 및 공식 사이트 가격을 확인한다. 체크인·체크아웃 날짜와 인원, 전체 객실 총액이 같은 공개 자료에서 확인되는 경우만 lodgingQuote.kind를 stay_total로 쓴다.',
+        '조건이 같지 않아도 해당 호텔의 공개된 1박 기준가가 있으면 nightly_reference로 기록한다. 시작가나 특가라도 정확한 액수와 조건이 확인될 때만 사용한다. 가격이 없으면 null을 사용한다.',
+        'lodgingQuote.sourceUrl은 실제 사용한 출처 URL이고 evidence는 검색 결과에 있는 원화 금액·가격 조건을 그대로 인용한다. stay_total은 출처에 적힌 두 날짜와 인원도 evidence에 포함한다. 확인한 내용 외의 문구는 더하지 않는다.',
         '영업시간 등 최신 정보는 검색에서 확인한 내용만 작성한다. 일정 시간은 방문 제안 시간이다.',
         'endTime은 제안 방문 종료 시간 HH:MM 또는 null이다. setting은 실내, 야외 또는 유형 미확인으로 기록한다.',
         'hours는 web_search로 방문 날짜에 적용되는 장소 운영시간을 확인한 경우에만 기록한다. 날짜와 검색에서 실제 확인한 정확한 출처 URL, HH:MM 운영 구간을 넣는다. 출처에서 휴무를 확인한 경우에만 빈 배열을 사용하고, 그 외 미확인은 null이다.',
+        '박물관·식당·카페처럼 운영시간이 중요한 장소는 네이버 플레이스나 공식 사이트에서 요일별 운영시간과 휴무를 우선 확인한다. 해당 방문일의 요일에 적용되는 공개 운영시간만 사용한다.',
         '자동차 구간 제한을 지정하지 않은 경우 검증 기준은 구간당 90분이다.',
         ...(revision ? [
           '이번 입력은 기존 여행 조건, 현재 일정, 새 변경 요청이다. 여행 지역, 여행 날짜 범위, 인원과 총예산은 유지한다.',
@@ -228,8 +237,9 @@ async function generatePlan(response, conditions, previous, message) {
     }, conditions, trace, candidate => {
       if (revision) return reviewRevision(candidate, previous, revision);
       const itinerary = formatPlan(candidate, conditions);
-      const { lodgingName } = JSON.parse(candidate.output);
-      return { itinerary, lodgingName: hasText(lodgingName, 100) ? lodgingName.trim() : null,
+      const { lodgingName, lodgingQuote } = JSON.parse(candidate.output);
+      const hotel = hasText(lodgingName, 100) ? lodgingName.trim() : null;
+      return { itinerary, lodgingName: hotel, lodgingQuote: verifiedLodgingQuote(lodgingQuote, hotel, conditions, candidate.webSources),
         issues: validateItinerary(itinerary, candidate.costs, candidate.weather, conditions) };
     }, revision);
     const agentTime = performance.now() - started;
@@ -243,7 +253,7 @@ async function generatePlan(response, conditions, previous, message) {
         item.amount === previous.costs.find(cost => cost.category === '숙박')?.amount
         ? { category: item.category, amount: null, status: 'unknown' } : item);
     }
-    result.costs = estimateTripBudget(result.costs, result.itinerary, conditions, result.lodgingName);
+    result.costs = estimateTripBudget(result.costs, result.itinerary, conditions, result.lodgingName, result.lodgingQuote);
     result.issues = validateItinerary(result.itinerary, result.costs, result.weather, conditions);
     const remaining = new Set(result.issues.map(issue => issue.id));
     const describeDay = stops => stops.map(([time, name, , , , , visit]) =>
@@ -253,7 +263,8 @@ async function generatePlan(response, conditions, previous, message) {
       const after = describeDay(day);
       return before === after ? [] : [{ day: index + 1, before, after }];
     });
-    const planId = rememberPlan({ conditions, itinerary: result.itinerary, costs: result.costs, lodgingName: result.lodgingName, weather: result.weather, issues: result.issues });
+    const planId = rememberPlan({ conditions, itinerary: result.itinerary, costs: result.costs, lodgingName: result.lodgingName,
+      lodgingQuote: result.lodgingQuote, weather: result.weather, issues: result.issues });
     const changes = revision ? changesFrom(previous.itinerary).map(change => ({
       ...change, reason: result.updates.find(update => update.day === change.day)?.reason
     })) : [];
@@ -264,6 +275,7 @@ async function generatePlan(response, conditions, previous, message) {
       itinerary: result.itinerary,
       costs: result.costs.map(({ category, amount, status, basis }) => [category, amount, status, basis]),
       lodgingName: result.lodgingName,
+      lodgingQuote: result.lodgingQuote,
       weather: result.weather,
       weatherAvailableThrough: weatherAvailableThrough(),
       validation: {
@@ -276,7 +288,7 @@ async function generatePlan(response, conditions, previous, message) {
       ...(revision ? { revision: {
         reply: result.reply,
         changes,
-        applied: JSON.stringify([result.itinerary, result.costs, result.weather, result.lodgingName]) !== JSON.stringify([previous.itinerary, previous.costs, previous.weather, previous.lodgingName ?? null])
+        applied: JSON.stringify([result.itinerary, result.costs, result.weather, result.lodgingName, result.lodgingQuote]) !== JSON.stringify([previous.itinerary, previous.costs, previous.weather, previous.lodgingName ?? null, previous.lodgingQuote ?? null])
       } } : {}),
       trace
     });

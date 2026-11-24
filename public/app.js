@@ -101,6 +101,21 @@ function weatherWindow() {
   return `<p class="details">이 일정 생성 시점 기준, 날씨는 최대 <strong>${date}</strong>까지 조회할 수 있어요. 지역과 기상청 발표 여부에 따라 예보가 없을 수 있습니다.</p>`;
 }
 
+function naverLookup(name, keyword) {
+  return 'https://search.naver.com/search.naver?query=' + encodeURIComponent(`${plan.region} ${name} ${keyword}`);
+}
+
+function lodgingPriceNote() {
+  if (!plan.lodgingName) return '';
+  const quote = plan.lodgingQuote;
+  const reference = quote?.kind === 'nightly_reference'
+    ? `공개 1박 참고가 ${money(quote.amount)} · 선택한 날짜의 총액과 예약 가능 여부는 확인 필요${quote.evidence ? `<br>${escapeHtml(quote.evidence)}` : ''}`
+    : quote?.kind === 'stay_total' ? '여행 날짜와 인원에 맞는 공개 요금을 예산 추정에 반영했습니다.' : '여행 날짜와 인원에 맞는 공개 객실 요금을 확인하지 못했습니다.';
+  return `<p class="note place-source"><strong>${escapeHtml(plan.lodgingName)}</strong> · ${reference}
+    ${quote?.sourceUrl ? `<br>${sourceLink(quote.sourceUrl, '가격 출처')}` : ''}<br>
+    ${sourceLink(naverLookup(plan.lodgingName, '객실 예약 가격'), '네이버에서 객실 가격 확인')}</p>`;
+}
+
 const budgetNotices = new WeakMap();
 function budgetEditor(budget, costs) {
   return `<details class="budget-editor"><summary>예산 수정</summary>
@@ -143,7 +158,9 @@ function validationReport(report) {
       `<li><strong>${change.day}일차</strong><br>수정 전 · ${escapeHtml(change.before)}<br>수정 후 · ${escapeHtml(change.after)}</li>`).join('')}</ul></details>` : ''}
     ${groups.size ? `<details><summary>${activeDay + 1}일차 확인 사항 · ${[...groups.keys()].join(' · ')}</summary>
       <ul>${[...groups].map(([label, issues]) => `<li><strong>${label}</strong> · ${[...new Set(issues.map(issue =>
-        escapeHtml(issue.subject || issue.message)))].join(' · ')}</li>`).join('')}</ul></details>` : ''}
+        issue.code === 'hours_unknown' && issue.subject
+          ? sourceLink(naverLookup(issue.subject, '영업시간'), issue.subject)
+          : escapeHtml(issue.subject || issue.message)))].join(' · ')}</li>`).join('')}</ul></details>` : ''}
   </section>`;
 }
 
@@ -197,7 +214,7 @@ function render() {
       <tfoot><tr><th scope="row">총예산</th><td>${money(budget)}</td><td></td></tr>
       <tr><th scope="row">${partial ? '비용 소계' : '비용 합계'}</th><td>${known.length ? money(total) : '미확인'}</td><td></td></tr>
       <tr><th scope="row">${known.length && remaining < 0 ? '예산 초과' : '잔여 예산'}</th><td>${known.length ? money(Math.abs(remaining)) : '미확인'}</td><td>${known.length && partial ? '미확인 항목 제외' : ''}</td></tr></tfoot></table>`;
-    if (ai) panel.innerHTML += budgetEditor(budget, costs);
+    if (ai) panel.innerHTML += lodgingPriceNote() + budgetEditor(budget, costs);
   } else {
     const trace = failedTrace ?? plan.trace ?? [];
     panel.innerHTML = `<h3 class="day-title">Agent 실행 기록${failedTrace ? ' · 생성 실패' : ''}</h3>`;

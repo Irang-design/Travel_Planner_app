@@ -63,7 +63,11 @@ const tripStorage = (() => {
       } : null,
       locallyEdited: Boolean(plan.locallyEdited),
       weatherAvailableThrough: plan.weatherAvailableThrough,
-      lodgingName: plan.lodgingName ? redact(plan.lodgingName, 100) : null
+      lodgingName: plan.lodgingName ? redact(plan.lodgingName, 100) : null,
+      lodgingQuote: plan.lodgingQuote ? {
+        kind: plan.lodgingQuote.kind, amount: plan.lodgingQuote.amount,
+        sourceUrl: publicUrl(plan.lodgingQuote.sourceUrl), evidence: redact(plan.lodgingQuote.evidence, 250)
+      } : null
     };
   }
 
